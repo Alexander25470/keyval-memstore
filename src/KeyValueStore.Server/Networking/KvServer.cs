@@ -48,6 +48,7 @@ public class KvServer
             while (!ct.IsCancellationRequested)
             {
                 var client = await listener.AcceptTcpClientAsync(ct);
+                client.NoDelay = true;  // disable Nagle — lower latency for small RESP responses
                 var session = new ClientSession(client, _dispatcher, _hub);
                 _ = session.RunAsync(ct); // fire-and-forget
             }
