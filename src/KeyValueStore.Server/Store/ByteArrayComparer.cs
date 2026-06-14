@@ -4,9 +4,9 @@ namespace KeyValueStore.Server.Store;
 
 /// <summary>
 /// Structural equality comparer for <see cref="byte[]"/>.
-/// FNV-1a hash for fast distribution; SequenceEqual for equality.
-/// Used by <see cref="InMemoryStore"/> for set and hash operations
-/// where byte-level key matching is required.
+/// Uses <see cref="Span{T}.SequenceEqual"/> (JIT intrinsic, SIMD) for equality
+/// and <see cref="HashCode.AddBytes(ReadOnlySpan{byte})"/> (accelerado en .NET 8+)
+/// para hashing. Performance equivalente a <c>string</c>'s built-in comparer.
 /// </summary>
 internal sealed class ByteArrayComparer : IEqualityComparer<byte[]>
 {
@@ -23,16 +23,8 @@ internal sealed class ByteArrayComparer : IEqualityComparer<byte[]>
 
     public int GetHashCode(byte[] obj)
     {
-        // FNV-1a hash of the byte array content.
-        unchecked
-        {
-            uint hash = 2166136261;
-            foreach (var b in obj)
-            {
-                hash ^= b;
-                hash *= 16777619;
-            }
-            return (int)hash;
-        }
+        var hc = new HashCode();
+        hc.AddBytes(obj);
+        return hc.ToHashCode();
     }
 }

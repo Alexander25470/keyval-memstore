@@ -12,23 +12,24 @@ public static class KeyCommands
     public static async ValueTask Del(ReadOnlyMemory<byte>[] args, InMemoryStore store, RespWriter writer, IReplicationCoordinator? replication = null)
     {
         if (args.Length < 2) { await writer.WriteError("wrong number of arguments for 'DEL' command"); return; }
-        var keys = args[1..].Select(Str).ToArray();
+        var keys = args[1..];
         int count = store.Delete(keys);
-        if (count > 0) replication?.OnWrite("DEL", string.Join(',', keys), "", null);
+        if (count > 0) replication?.OnWrite("DEL", string.Join(',', keys.Select(Str)), "", null);
         await writer.WriteInteger(count);
     }
 
     public static async ValueTask Exists(ReadOnlyMemory<byte>[] args, InMemoryStore store, RespWriter writer)
     {
         if (args.Length < 2) { await writer.WriteError("wrong number of arguments for 'EXISTS' command"); return; }
-        await writer.WriteInteger(store.Exists(args[1..].Select(Str).ToArray()));
+        await writer.WriteInteger(store.Exists(args[1..]));
     }
 
     public static async ValueTask Keys(ReadOnlyMemory<byte>[] args, InMemoryStore store, RespWriter writer)
     {
         if (args.Length != 2) { await writer.WriteError("wrong number of arguments for 'KEYS' command"); return; }
-        var matches = store.Keys(Str(args[1]));
-        await writer.WriteArray(matches.Select(s => (ReadOnlyMemory<byte>)Encoding.ASCII.GetBytes(s)).ToArray());
+        var matches = store.Keys(args[1]);
+        matches = [.. matches.OrderBy(k => k, Comparer<byte[]>.Create((a, b) => a.AsSpan().SequenceCompareTo(b.AsSpan())))];
+        await writer.WriteArray(matches.Select(k => new ReadOnlyMemory<byte>(k)).ToArray());
     }
 
     public static async ValueTask DbSize(InMemoryStore store, RespWriter writer)
@@ -49,7 +50,7 @@ public static class KeyCommands
             await writer.WriteError("value is not an integer or out of range");
             return;
         }
-        bool result = store.Expire(Str(args[1]), seconds);
+        bool result = store.Expire(args[1], seconds);
         if (result) replication?.OnWrite("EXPIRE", Str(args[1]), seconds.ToString(), null);
         await writer.WriteInteger(result ? 1 : 0);
     }
@@ -57,19 +58,19 @@ public static class KeyCommands
     public static async ValueTask Ttl(ReadOnlyMemory<byte>[] args, InMemoryStore store, RespWriter writer)
     {
         if (args.Length != 2) { await writer.WriteError("wrong number of arguments for 'TTL' command"); return; }
-        await writer.WriteInteger(store.Ttl(Str(args[1])));
+        await writer.WriteInteger(store.Ttl(args[1]));
     }
 
     public static async ValueTask PTtl(ReadOnlyMemory<byte>[] args, InMemoryStore store, RespWriter writer)
     {
         if (args.Length != 2) { await writer.WriteError("wrong number of arguments for 'PTTL' command"); return; }
-        var ttl = store.Ttl(Str(args[1]));
+        var ttl = store.Ttl(args[1]);
         await writer.WriteInteger(ttl >= 0 ? ttl * 1000L : ttl);
     }
 
     public static async ValueTask Type(ReadOnlyMemory<byte>[] args, InMemoryStore store, RespWriter writer)
     {
         if (args.Length != 2) { await writer.WriteError("wrong number of arguments for 'TYPE' command"); return; }
-        await writer.WriteSimpleString(store.Type(Str(args[1])));
+        await writer.WriteSimpleString(store.Type(args[1]));
     }
 }

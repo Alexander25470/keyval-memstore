@@ -103,7 +103,7 @@ Cada request TCP genera objetos temporales que el garbage collector debe limpiar
 
 - **`RespReader`**: el buffer donde se leen los bytes del socket se pide prestado a un pool (`ArrayPool<byte>.Shared`) y se devuelve al cerrar la conexión. Se evita asignar un buffer nuevo por cada request.
 - **`RespWriter`**: en vez de construir la respuesta con `StringBuilder`, convertirla a `string` y luego a `byte[]`, se escribe directo a bytes usando `ArrayBufferWriter<byte>`. Esto evita dos asignaciones por respuesta.
-- **Pipeline de datos en `byte[]`**: los comandos se leen como `ReadOnlyMemory<byte>[]` apuntando directamente al buffer interno del `RespReader` (zero-copy). Los valores se almacenan como `byte[]` en el store, sin conversiones de encoding. Sets y hashes usan `ByteArrayComparer` para igualdad estructural de bytes.
+- **Pipeline de datos en `byte[]`**: los comandos se leen como `ReadOnlyMemory<byte>[]` apuntando directamente al buffer interno del `RespReader` (zero-copy). Tanto keys como valores se almacenan como `byte[]` en el store, sin conversiones de encoding — binary-safe de punta a punta, idéntico a Redis real. Sets y hashes usan `ByteArrayComparer` para igualdad estructural de bytes, y el `ConcurrentDictionary` de keys usa el mismo comparer.
 
 El resultado es menos presión sobre el garbage collector y latencia más pareja bajo carga.
 
@@ -157,7 +157,7 @@ KvServer (1 Task)
 | `PubSubCommandsTests` | 15 | Publicar, suscribir, unsubscribe, sesiones |
 | `IntegrationTests` | 18 | TCP real con `RespWriter`/`RespReader` en ambos extremos |
 | `StackExchangeRedisCompatibilityTests` | 29 | Validación de compatibilidad con la librería `StackExchange.Redis` |
-| **Total** | **185** | **28/29 SE.Redis, 100% resto** |
+| **Total** | **206** | **28/29 SE.Redis, 100% resto** |
 
 ---
 
@@ -203,6 +203,5 @@ KvServer (1 Task)
 
 | Mejora | Descripción |
 |---|---|
-| Migración de keys a `byte[]` | Las keys del store todavía son `string`. Migrar a `byte[]` con `ByteArrayComparer` para binary-safe completo en keys (ver plan en `.github/prompts/plan-migrateToBytes.prompt.md`) |
 | Suscripción sin sesión previa | SE.Redis envía `SUBSCRIBE` en conexiones frescas sin `ClientSession`. Crear sesión automáticamente al recibir `SUBSCRIBE`/`PSUBSCRIBE` sin sesión activa. |
 | Soporte multi-instancia | Replicación y alta disponibilidad con múltiples nodos |

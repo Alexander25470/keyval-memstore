@@ -18,6 +18,8 @@ public class CommandDispatcherTests
         _dispatcher = new CommandDispatcher(_store, new PubSubHub());
     }
 
+    private static ReadOnlyMemory<byte> B(string s) => Encoding.ASCII.GetBytes(s);
+
     private static ReadOnlyMemory<byte>[] ToArgs(string[] args) =>
         args.Select(s => new ReadOnlyMemory<byte>(Encoding.ASCII.GetBytes(s))).ToArray();
 
@@ -59,7 +61,7 @@ public class CommandDispatcherTests
     [Fact] public async Task Set_WithEX_SetsTTL()
     {
         await Exec("SET k v EX 3600");
-        Assert.True(_store.Ttl("k") > 0);
+        Assert.True(_store.Ttl(new ReadOnlyMemory<byte>(Encoding.ASCII.GetBytes("k"))) > 0);
     }
     [Fact] public async Task Set_ExMissingValue_ReturnsError() => Assert.StartsWith("-ERR", await Exec("SET k v EX"));
     [Fact] public async Task Set_PxMissingValue_ReturnsError() => Assert.StartsWith("-ERR", await Exec("SET k v PX"));
@@ -68,7 +70,7 @@ public class CommandDispatcherTests
     {
         await Exec("SET k v PX 5000");
         // TTL should be ~5s (PX is milliseconds)
-        Assert.True(_store.Ttl("k") > 0);
+        Assert.True(_store.Ttl(new ReadOnlyMemory<byte>(Encoding.ASCII.GetBytes("k"))) > 0);
     }
 
     // ---- DEL ----

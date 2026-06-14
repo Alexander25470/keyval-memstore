@@ -23,7 +23,7 @@ public static class StringCommands
             else { await writer.WriteError("syntax error"); return; }
         }
 
-        store.Set(Str(args[1]), args[2], ttl);
+        store.Set(args[1], args[2], ttl);
         replication?.OnWrite("SET", Str(args[1]), Str(args[2]), ttl);
         await writer.WriteOk();
     }
@@ -31,7 +31,7 @@ public static class StringCommands
     public static async ValueTask Get(ReadOnlyMemory<byte>[] args, InMemoryStore store, RespWriter writer)
     {
         if (args.Length != 2) { await writer.WriteError("wrong number of arguments for 'GET' command"); return; }
-        var val = store.Get(Str(args[1]));
+        var val = store.Get(args[1]);
         if (val is null) { await writer.WriteBulkString(null); return; }
         await writer.WriteBulkString(val);
     }
@@ -39,14 +39,14 @@ public static class StringCommands
     public static async ValueTask Incr(ReadOnlyMemory<byte>[] args, InMemoryStore store, RespWriter writer, IReplicationCoordinator? replication = null)
     {
         if (args.Length != 2) { await writer.WriteError("wrong number of arguments for 'INCR' command"); return; }
-        try { var val = store.Incr(Str(args[1])); replication?.OnWrite("INCR", Str(args[1]), val.ToString(), null); await writer.WriteInteger(val); }
+        try { var val = store.Incr(args[1]); replication?.OnWrite("INCR", Str(args[1]), val.ToString(), null); await writer.WriteInteger(val); }
         catch (InvalidOperationException) { await writer.WriteError("value is not an integer or out of range"); }
     }
 
     public static async ValueTask Decr(ReadOnlyMemory<byte>[] args, InMemoryStore store, RespWriter writer, IReplicationCoordinator? replication = null)
     {
         if (args.Length != 2) { await writer.WriteError("wrong number of arguments for 'DECR' command"); return; }
-        try { var val = store.Decr(Str(args[1])); replication?.OnWrite("DECR", Str(args[1]), val.ToString(), null); await writer.WriteInteger(val); }
+        try { var val = store.Decr(args[1]); replication?.OnWrite("DECR", Str(args[1]), val.ToString(), null); await writer.WriteInteger(val); }
         catch (InvalidOperationException) { await writer.WriteError("value is not an integer or out of range"); }
     }
 
@@ -59,7 +59,7 @@ public static class StringCommands
             return;
         }
         var ttl = TimeSpan.FromSeconds(seconds);
-        store.Set(Str(args[1]), args[3], ttl);
+        store.Set(args[1], args[3], ttl);
         replication?.OnWrite("SETEX", Str(args[1]), Str(args[3]), ttl);
         await writer.WriteOk();
     }
@@ -73,7 +73,7 @@ public static class StringCommands
             return;
         }
         var ttl = TimeSpan.FromMilliseconds(ms);
-        store.Set(Str(args[1]), args[3], ttl);
+        store.Set(args[1], args[3], ttl);
         replication?.OnWrite("PSETEX", Str(args[1]), Str(args[3]), ttl);
         await writer.WriteOk();
     }
