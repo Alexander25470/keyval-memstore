@@ -63,9 +63,23 @@ sequenceDiagram
 
 ---
 
-## 2. Decisiones de diseño
+## 2. Limitaciones conocidas
 
-### 2.1 RESP2 como protocolo
+### 2.1 Buffer de lectura fijo (4KB)
+
+**Límite de 4KB en `RespReader`.** El buffer de lectura tiene 4KB fijos. Un bulk string mayor (ej. `SET key <5KB>`) satura el buffer y produce `ProtocolException`. Esto no afecta el uso típico (keys y valores chicos), pero limita cargas de trabajo con valores grandes.
+
+**Solución prevista.** Hacer que el buffer crezca bajo demanda en `ReadMore` (`ArrayPool.Rent` más grande, `Return` el viejo) y se encoja a 4KB al terminar el comando (`TryShrink`). Sigue siendo zero-copy: los slices apuntan al buffer, sin `.ToArray()`.
+
+**`RespWriter` no usa pool.** `ArrayBufferWriter` aloca arrays managed que el GC debe recolectar si crecen. No es un problema real porque las respuestas del servidor son chicas (`+OK\r\n`, `:1\r\n`), y `Reset()` permite liberar el array si una respuesta grande (`KEYS *`) lo infló.
+
+### 2.2 Canal Pub/Sub acotado a 256 mensajes
+
+El inbox de cada suscriptor es un `Channel` bounded a 256 con `DropOldest`. Si el publicador produce más rápido de lo que el cliente consume, los mensajes más viejos se descartan silenciosamente. Redis tiene el mismo comportamiento vía `client-output-buffer-limit`, aunque mide el límite en bytes y no en cantidad de mensajes.
+
+## 3. Decisiones de diseño
+
+### 3.1 RESP2 como protocolo
 
 RESP2 (Redis Serialization Protocol v2) es el estándar de facto para bases de datos clave-valor en memoria. Usarlo permite que cualquier cliente Redis (`redis-cli`, `StackExchange.Redis`, librerías en Python, Go, Java, etc.) se conecte sin modificación.
 
@@ -82,27 +96,27 @@ RESP2 define seis tipos:
 
 También se soportan comandos inline (`PING\r\n`) para compatibilidad con telnet/netcat.
 
-### 2.2 `ConcurrentDictionary` en vez de `Dictionary` + `lock`
+### 3.2 `ConcurrentDictionary` en vez de `Dictionary` + `lock`
 
 Las lecturas son lock-free en el path común. Escrituras a buckets distintos no compiten. Sin riesgo de deadlocks ni de olvidar un lock. Toda la concurrencia está encapsulada dentro de `InMemoryStore` — quien lo usa nunca ve un lock.
 
-### 2.3 `async`/`await` con IOCP en vez de event loop single-threaded
+### 3.3 `async`/`await` con IOCP en vez de event loop single-threaded
 
 Por debajo, .NET usa IOCP/epoll — cero hilos bloqueados en I/O. A diferencia del modelo single-threaded donde un comando lento (`KEYS *` con 100k keys) bloquea a todos los clientes, acá cada sesión corre en su propio `Task`. `ConcurrentDictionary` permite lecturas y escrituras concurrentes a nivel de bucket, por lo que otros clientes pueden seguir operando mientras uno está iterando.
 
-### 2.4 TTL con doble expiración (lazy + active sampling)
+### 3.4 TTL con doble expiración (lazy + active sampling)
 
 - **Lazy**: cada `GET`, `EXISTS`, `KEYS`, `DBSIZE`, `TTL` verifica `IsExpired`. Si expiró, `TryRemove` y se trata como inexistente. Garantiza nunca devolver un valor expirado. Overhead: ~10ns por acceso.
 - **Active**: loop en background que cada 100ms samplea 20 keys al azar, elimina las expiradas, y repite inmediatamente si más del 25% estaban expiradas. Evita acumulación de memoria.
 
 Redis usa exactamente esta combinación.
 
-### 2.5 Estrategia zero-allocation
+### 3.5 Estrategia zero-allocation
 
 Cada request TCP genera objetos temporales que el garbage collector debe limpiar. A alto volumen, esto produce pausas que degradan la latencia. Para mitigarlo se aplicaron: tres optimizaciones:
 
-- **`RespReader`**: el buffer donde se leen los bytes del socket se pide prestado a un pool (`ArrayPool<byte>.Shared`) y se devuelve al cerrar la conexión. Se evita asignar un buffer nuevo por cada request.
-- **`RespWriter`**: en vez de construir la respuesta con `StringBuilder`, convertirla a `string` y luego a `byte[]`, se escribe directo a bytes usando `ArrayBufferWriter<byte>`. Esto evita dos asignaciones por respuesta.
+- **`RespReader`**: el buffer donde se leen los bytes del socket se pide prestado a un pool (`ArrayPool<byte>.Shared`) y se devuelve al cerrar la conexión. Se evita asignar un buffer nuevo por cada request. Se eligió `ArrayPool` en vez de `ArrayBufferWriter` porque: (a) el buffer crece bajo demanda cuando un bulk string no entra en 4KB, y (b) al devolverlo al pool con `Return`, múltiples sesiones reúsan arrays del mismo tamaño sin pasar por el GC — si 100 conexiones piden 10MB, rotan el mismo array.
+- **`RespWriter`**: en vez de construir la respuesta con `StringBuilder`, convertirla a `string` y luego a `byte[]`, se escribe directo a bytes usando `ArrayBufferWriter<byte>`. Esto evita dos asignaciones por respuesta. Se usa `ArrayBufferWriter` en vez de `ArrayPool` porque las respuestas del servidor son chicas y de tamaños variados (no hay patrón de reúso), y `Reset()` permite liberar el array si creció desmedidamente tras una respuesta grande (`KEYS *` con muchas keys).
 - **Pipeline de datos en `byte[]`**: los comandos se leen como `ReadOnlyMemory<byte>[]` apuntando directamente al buffer interno del `RespReader` (zero-copy). Tanto keys como valores se almacenan como `byte[]` en el store, sin conversiones de encoding — binary-safe de punta a punta, idéntico a Redis real. Sets y hashes usan `ByteArrayComparer` para igualdad estructural de bytes, y el `ConcurrentDictionary` de keys usa el mismo comparer.
 - **`StoreEntry` como `struct`**: cada entry vive inline en el slot del `ConcurrentDictionary`, sin objeto heap separado. Con 100k keys, son 100k objetos menos que el GC no tiene que barrer.
 - **`TcpClient.NoDelay = true`**: desactiva el algoritmo de Nagle. Respuestas chicas (`+OK\r\n`, `:1\r\n`) se envían inmediatamente sin esperar a acumular más datos. Crítico en RESP2 donde cada respuesta es un paquete independiente.
@@ -119,7 +133,7 @@ flowchart LR
 
 El resultado es menos presión sobre el garbage collector y latencia más pareja bajo carga.
 
-### 2.6 Tradeoffs encontrados al integrar con StackExchange.Redis
+### 3.6 Tradeoffs encontrados al integrar con StackExchange.Redis
 
 Al validar el servidor contra el cliente .NET más popular (`StackExchange.Redis`) surgieron varios problemas que forzaron decisiones de diseño adicionales:
 
@@ -135,7 +149,7 @@ Al validar el servidor contra el cliente .NET más popular (`StackExchange.Redis
 
 ---
 
-## 3. Modelo de concurrencia
+## 4. Modelo de concurrencia
 
 ```
 KvServer (1 Task)
@@ -152,7 +166,7 @@ KvServer (1 Task)
 
 ---
 
-## 4. Manejo de errores
+## 5. Manejo de errores
 
 - **Errores de cliente**: devueltos como RESP error (`-ERR …\r\n`). Nunca crashean el servidor.
 - **Errores de protocolo**: `ProtocolException` → conexión cerrada limpiamente.
@@ -160,7 +174,7 @@ KvServer (1 Task)
 
 ---
 
-## 5. Tests
+## 6. Tests
 
 | Nivel | Cantidad | Qué prueba |
 |---|---|---|
@@ -175,7 +189,7 @@ KvServer (1 Task)
 
 ---
 
-## 6. Comandos soportados
+## 7. Comandos soportados
 
 | Comando | Tipo | Descripción |
 |---|---|---|
@@ -213,7 +227,7 @@ KvServer (1 Task)
 
 ---
 
-## 7. Mejoras a futuro
+## 8. Mejoras a futuro
 
 | Mejora | Descripción |
 |---|---|
