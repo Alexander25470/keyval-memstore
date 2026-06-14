@@ -104,6 +104,17 @@ Cada request TCP genera objetos temporales que el garbage collector debe limpiar
 - **`RespReader`**: el buffer donde se leen los bytes del socket se pide prestado a un pool (`ArrayPool<byte>.Shared`) y se devuelve al cerrar la conexión. Se evita asignar un buffer nuevo por cada request.
 - **`RespWriter`**: en vez de construir la respuesta con `StringBuilder`, convertirla a `string` y luego a `byte[]`, se escribe directo a bytes usando `ArrayBufferWriter<byte>`. Esto evita dos asignaciones por respuesta.
 - **Pipeline de datos en `byte[]`**: los comandos se leen como `ReadOnlyMemory<byte>[]` apuntando directamente al buffer interno del `RespReader` (zero-copy). Tanto keys como valores se almacenan como `byte[]` en el store, sin conversiones de encoding — binary-safe de punta a punta, idéntico a Redis real. Sets y hashes usan `ByteArrayComparer` para igualdad estructural de bytes, y el `ConcurrentDictionary` de keys usa el mismo comparer.
+- **`StoreEntry` como `struct`**: cada entry vive inline en el slot del `ConcurrentDictionary`, sin objeto heap separado. Con 100k keys, son 100k objetos menos que el GC no tiene que barrer.
+
+```mermaid
+flowchart LR
+    subgraph "class StoreEntry"
+        D["dict[K]"] -->|"ptr 8B"| H["heap: header 16B + Value + Type + Expiry"]
+    end
+    subgraph "struct StoreEntry"
+        D2["dict[K]"] ---|"inline"| H2["Value + Type + Expiry"]
+    end
+```
 
 El resultado es menos presión sobre el garbage collector y latencia más pareja bajo carga.
 

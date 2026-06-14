@@ -3,11 +3,12 @@ namespace KeyValueStore.Server.Store;
 internal enum StoreType { String, Set, Hash }
 
 /// <summary>
-/// Internal value wrapper with optional TTL. Holds one of:
+/// Stack-friendly value wrapper with optional TTL. Holds one of:
 /// <c>byte[]</c>, <c>HashSet&lt;byte[]&gt;</c>, or <c>Dictionary&lt;byte[], byte[]&gt;</c>.
-/// All byte arrays are owned copies — safe to store and mutate independently.
+/// A <c>struct</c> to avoid a separate heap object per key — values are stored
+/// inline in the <see cref="ConcurrentDictionary{TKey,TValue}"/> buckets.
 /// </summary>
-internal class StoreEntry
+internal readonly struct StoreEntry
 {
     public object Value { get; }
     public StoreType Type { get; }
