@@ -67,7 +67,7 @@ flowchart TB
 
         subgraph Sessions["ClientSession × N (fire-and-forget)"]
             direction LR
-            RR["RespReader<br/>NetworkStream → ReadOnlyMemory&lt;byte&gt;[]<br/>ArrayPool + zero-copy"]
+            RR["RespReader<br/>NetworkStream → bytes[]<br/>ArrayPool + zero-copy"]
             CD["CommandDispatcher<br/>ASCII(command) → handler<br/>30 comandos"]
             RW["RespWriter<br/>ReadOnlyMemory&lt;byte&gt; → bytes<br/>ArrayBufferWriter"]
             RR --> CD --> RW
@@ -190,7 +190,7 @@ Ejemplo real con `redis-cli`:
 flowchart LR
     subgraph "Lectura (zero-copy)"
         S1[Socket] -->|ReadAsync| B1["byte[] buffer<br/>(ArrayPool)"]
-        B1 -->|"Slice (sin copia)"| M1["ReadOnlyMemory&lt;byte&gt;[]<br/>args[0]=SET<br/>args[1]=key<br/>args[2]=value"]
+        B1 -->|"Slice (sin copia)"| M1["bytes[]<br/>args[0]=SET<br/>args[1]=key<br/>args[2]=value"]
     end
 
     subgraph "Store (owned copy)"

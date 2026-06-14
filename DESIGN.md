@@ -17,7 +17,7 @@ flowchart TB
         direction TB
         subgraph Sessions["ClientSession (× N)"]
             direction LR
-            RR[RespReader<br/>RESP → ReadOnlyMemory&lt;byte&gt;[]]
+            RR[RespReader<br/>RESP → bytes]
             CD[CommandDispatcher<br/>arity → ruteo → ejecución]
             RW[RespWriter<br/>ReadOnlyMemory&lt;byte&gt; → RESP]
             RR --> CD --> RW
@@ -54,7 +54,7 @@ sequenceDiagram
 
     C->>CS: *3\r\n$3\r\nSET\r\n…
     CS->>RR: ReadCommand(stream)
-    RR-->>CS: ReadOnlyMemory&lt;byte&gt;[]
+    RR-->>CS: bytes[]
     CS->>CD: ExecuteAsync(args, writer)
     CD->>IMS: Set("foo", "bar")
     CD->>RW: WriteOk()
