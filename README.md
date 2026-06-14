@@ -2,6 +2,13 @@
 
 Base de datos clave-valor en memoria con protocolo RESP2. Compatible con cualquier cliente Redis.
 
+## Documentación
+
+| Documento | Contenido |
+|---|---|
+| [`ARCHITECTURE.md`](ARCHITECTURE.md) | Diagramas de arquitectura, flujo de comandos y pub/sub, pipeline binary-safe, modelo de concurrencia, TTL, matriz de compatibilidad con SE.Redis |
+| [`DESIGN.md`](DESIGN.md) | Decisiones de diseño, tradeoffs, zero-allocation, integración con StackExchange.Redis, mejoras futuras |
+
 ## Requisitos
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)

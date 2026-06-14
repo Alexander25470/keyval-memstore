@@ -280,11 +280,10 @@ flowchart TB
 
 | Decisión | Alternativa rechazada | Razón |
 |---|---|---|
-| RESP2 | RESP3 / protocolo propio | Compatibilidad universal con clientes Redis existentes |
+| RESP2 | protocolo propio | Compatibilidad universal con clientes Redis existentes |
 | `ConcurrentDictionary` | `Dictionary` + `lock` | Lecturas lock-free, sin deadlocks, más simple |
-| `async`/`await` + IOCP | Event loop single-threaded | Comandos lentos no bloquean a otros clientes |
-| `byte[]` para keys y valores | `string` + encoding | Binary-safe real, sin pérdida de datos, zero-copy en RespReader |
-| `ArrayPool<byte>` en RespReader | `new byte[4096]` por request | Menos presión de GC, buffers reutilizados |
+| `async`/`await` + IOCP | Event loop single-threaded (como redis) | Comandos lentos no bloquean a otros clientes |
+| `byte[]` para keys y valores | `string` | Binary-safe real, sin pérdida de datos, zero-copy en RespReader |
+| `ArrayPool<byte>` en RespReader |  | Menos presión de GC, buffers reutilizados |
 | `ArrayBufferWriter<byte>` en RespWriter | `StringBuilder` → `string` → `byte[]` | Dos allocs menos por respuesta |
 | `ByteArrayComparer` con `SequenceEqual` | `Enumerable.SequenceEqual` | SIMD-accelerated, misma performance que `string.Equals` |
-| xUnit `IClassFixture<ServerFixture>` | Un servidor por test | 206 tests en 3s en vez de 60s |
