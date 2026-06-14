@@ -44,4 +44,34 @@ public static class StringCommands
         try { var val = store.Decr(args[1]); replication?.OnWrite("DECR", args[1], val.ToString(), null); await writer.WriteInteger(val); }
         catch (InvalidOperationException) { await writer.WriteError("value is not an integer or out of range"); }
     }
+
+    /// <summary>SETEX key seconds value — atomic SET with EXpire.</summary>
+    public static async ValueTask SetEx(string[] args, InMemoryStore store, RespWriter writer, IReplicationCoordinator? replication = null)
+    {
+        if (args.Length != 4) { await writer.WriteError("wrong number of arguments for 'SETEX' command"); return; }
+        if (!double.TryParse(args[2], out var seconds) || seconds < 0)
+        {
+            await writer.WriteError("value is not an integer or out of range");
+            return;
+        }
+        var ttl = TimeSpan.FromSeconds(seconds);
+        store.Set(args[1], args[3], ttl);
+        replication?.OnWrite("SETEX", args[1], args[3], ttl);
+        await writer.WriteOk();
+    }
+
+    /// <summary>PSETEX key milliseconds value — atomic SET with PXpire.</summary>
+    public static async ValueTask PSetEx(string[] args, InMemoryStore store, RespWriter writer, IReplicationCoordinator? replication = null)
+    {
+        if (args.Length != 4) { await writer.WriteError("wrong number of arguments for 'PSETEX' command"); return; }
+        if (!double.TryParse(args[2], out var ms) || ms < 0)
+        {
+            await writer.WriteError("value is not an integer or out of range");
+            return;
+        }
+        var ttl = TimeSpan.FromMilliseconds(ms);
+        store.Set(args[1], args[3], ttl);
+        replication?.OnWrite("PSETEX", args[1], args[3], ttl);
+        await writer.WriteOk();
+    }
 }

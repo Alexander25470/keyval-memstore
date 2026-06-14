@@ -39,6 +39,8 @@ public class CommandDispatcher
             ["PING"]      = (a, w, _) => ServerCommands.Ping(a, w),
             ["ECHO"]      = (a, w, _) => ServerCommands.Echo(a, w),
             ["QUIT"]      = (_, w, _) => ServerCommands.Quit(w),
+            ["HELLO"]     = (_, w, _) => ServerCommands.Hello(w),
+            ["CLIENT"]    = (a, w, _) => ServerCommands.Client(a, w),
 
             // ---- Key ----
             ["DEL"]       = (a, w, _) => KeyCommands.Del(a, store, w, replication),
@@ -48,6 +50,7 @@ public class CommandDispatcher
             ["FLUSHALL"]  = (_, w, _) => KeyCommands.FlushAll(store, w, replication),
             ["EXPIRE"]    = (a, w, _) => KeyCommands.Expire(a, store, w, replication),
             ["TTL"]       = (a, w, _) => KeyCommands.Ttl(a, store, w),
+            ["PTTL"]      = (a, w, _) => KeyCommands.PTtl(a, store, w),
             ["TYPE"]      = (a, w, _) => KeyCommands.Type(a, store, w),
 
             // ---- String ----
@@ -55,6 +58,8 @@ public class CommandDispatcher
             ["GET"]       = (a, w, _) => StringCommands.Get(a, store, w),
             ["INCR"]      = (a, w, _) => StringCommands.Incr(a, store, w, replication),
             ["DECR"]      = (a, w, _) => StringCommands.Decr(a, store, w, replication),
+            ["SETEX"]     = (a, w, _) => StringCommands.SetEx(a, store, w, replication),
+            ["PSETEX"]    = (a, w, _) => StringCommands.PSetEx(a, store, w, replication),
 
             // ---- Set ----
             ["SADD"]      = (a, w, _) => SetCommands.SAdd(a, store, w, replication),

@@ -55,6 +55,14 @@ public static class KeyCommands
         await writer.WriteInteger(store.Ttl(args[1]));
     }
 
+    /// <summary>PTTL key — returns TTL in milliseconds.</summary>
+    public static async ValueTask PTtl(string[] args, InMemoryStore store, RespWriter writer)
+    {
+        if (args.Length != 2) { await writer.WriteError("wrong number of arguments for 'PTTL' command"); return; }
+        var ttl = store.Ttl(args[1]);
+        await writer.WriteInteger(ttl >= 0 ? ttl * 1000L : ttl);
+    }
+
     public static async ValueTask Type(string[] args, InMemoryStore store, RespWriter writer)
     {
         if (args.Length != 2) { await writer.WriteError("wrong number of arguments for 'TYPE' command"); return; }

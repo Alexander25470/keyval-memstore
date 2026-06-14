@@ -14,6 +14,8 @@ public class RespWriter : IDisposable
     private readonly Stream _stream;
     private readonly ArrayBufferWriter<byte> _buf = new(256);
 
+    private static readonly Encoding Latin1 = Encoding.GetEncoding("ISO-8859-1");
+
     // Pre-encoded byte sequences.
     private static readonly byte[] CRLF = "\r\n"u8.ToArray();
     private static readonly byte[] DollarMinusOne = "$-1\r\n"u8.ToArray();
@@ -29,7 +31,7 @@ public class RespWriter : IDisposable
     {
         _buf.Clear();
         WriteByte((byte)'+');
-        WriteUtf8(value);
+        WriteLatin1(value);
         WriteBytes(CRLF);
         return FlushAsync();
     }
@@ -41,7 +43,7 @@ public class RespWriter : IDisposable
             WriteBytes(ErrPrefix);
         else
             WriteByte((byte)'-');
-        WriteUtf8(message);
+        WriteLatin1(message);
         WriteBytes(CRLF);
         return FlushAsync();
     }
@@ -63,11 +65,16 @@ public class RespWriter : IDisposable
             WriteBytes(DollarMinusOne);
             return FlushAsync();
         }
+
+        // Encode to Latin-1 for binary-safe round-trips.
+        // Latin-1 maps bytes 0-255 1:1 to Unicode code points.
+        int byteCount = value.Length; // Latin-1: 1 char = 1 byte
         WriteByte((byte)'$');
-        WriteInt64(value.Length);
+        WriteInt64(byteCount);
         WriteBytes(CRLF);
-        WriteUtf8(value);
+        WriteLatin1(value);
         WriteBytes(CRLF);
+
         return FlushAsync();
     }
 
@@ -82,7 +89,7 @@ public class RespWriter : IDisposable
             WriteByte((byte)'$');
             WriteInt64(item.Length);
             WriteBytes(CRLF);
-            WriteUtf8(item);
+            WriteLatin1(item);
             WriteBytes(CRLF);
         }
         return FlushAsync();
@@ -119,11 +126,12 @@ public class RespWriter : IDisposable
         _buf.Write(data);
     }
 
-    private void WriteUtf8(string s)
+    private void WriteLatin1(string s)
     {
-        var span = _buf.GetSpan(Encoding.UTF8.GetMaxByteCount(s.Length));
-        int written = Encoding.UTF8.GetBytes(s, span);
-        _buf.Advance(written);
+        var span = _buf.GetSpan(s.Length);
+        for (int i = 0; i < s.Length; i++)
+            span[i] = (byte)s[i];
+        _buf.Advance(s.Length);
     }
 
     private void WriteInt64(long value)
@@ -193,10 +201,11 @@ public class RespWriter : IDisposable
 
     private void WriteBulkStringInline(string value)
     {
+        int byteCount = value.Length; // Latin-1: 1 char = 1 byte
         WriteByte((byte)'$');
-        WriteInt64(value.Length);
+        WriteInt64(byteCount);
         WriteBytes(CRLF);
-        WriteUtf8(value);
+        WriteLatin1(value);
         WriteBytes(CRLF);
     }
 
