@@ -69,7 +69,7 @@ public class PubSubCommandsTests
         var writer = new RespWriter(ms);
         await _dispatcher.ExecuteAsync("SUBSCRIBE a".Split(' '), writer, session);
         await _dispatcher.ExecuteAsync("SUBSCRIBE b".Split(' '), writer, session);
-        Assert.Equal(":2\r\n", await Exec("PUBLISH a msg"));
+        Assert.Equal(":1\r\n", await Exec("PUBLISH a msg"));
         session.EnterSubscriptionMode(SubscriptionMode.None);
         using var ms2 = new MemoryStream();
         var writer2 = new RespWriter(ms2);
