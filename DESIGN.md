@@ -137,12 +137,12 @@ KvServer (1 Task)
 
 | Nivel | Cantidad | Qué prueba |
 |---|---|---|
-| `InMemoryStoreTests` | 31 | Operaciones del store, TTL, concurrencia, expiración activa |
+| `InMemoryStoreTests` | 52 | Operaciones del store, TTL, concurrencia, sets, hashes |
 | `RespReaderTests` | 12 | Parseo de arrays RESP, comandos inline, edge cases |
 | `RespWriterTests` | 17 | Todos los tipos RESP, null/empty, round-trip |
-| `CommandDispatcherTests` | 28 | Los 15 comandos, errores de aridad, comando desconocido |
+| `CommandDispatcherTests` | 42 | Los 27 comandos, errores de aridad, comando desconocido |
 | `IntegrationTests` | 18 | TCP real con `RespWriter`/`RespReader` en ambos extremos |
-| **Total** | **106** | **0 fallados, ~1.5s** |
+| **Total** | **143** | **0 fallados, ~1.6s** |
 
 ---
 
@@ -161,10 +161,21 @@ KvServer (1 Task)
 | `FLUSHALL` | Key | Vaciar el store |
 | `EXPIRE key seconds` | Key | Setear TTL |
 | `TTL key` | Key | Segundos restantes |
-| `TYPE key` | Key | `string` o `none` |
+| `TYPE key` | Key | `string`, `set`, `hash` o `none` |
 | `INCR key` | String | Incremento atómico |
 | `DECR key` | String | Decremento atómico |
 | `QUIT` | Server | Cerrar conexión |
+| `SADD key member […]` | Set | Agregar miembros |
+| `SREM key member […]` | Set | Eliminar miembros |
+| `SMEMBERS key` | Set | Listar todos los miembros |
+| `SISMEMBER key member` | Set | Verificar pertenencia |
+| `SCARD key` | Set | Cantidad de miembros |
+| `HSET key field value` | Hash | Setear campo |
+| `HGET key field` | Hash | Obtener campo |
+| `HDEL key field […]` | Hash | Eliminar campos |
+| `HGETALL key` | Hash | Listar todos los campos |
+| `HEXISTS key field` | Hash | Verificar existencia de campo |
+| `HLEN key` | Hash | Cantidad de campos |
 
 ---
 
@@ -172,6 +183,5 @@ KvServer (1 Task)
 
 | Mejora | Descripción |
 |---|---|
-| Sets, Hashes, SortedSets | Tipos de datos adicionales más allá de strings |
 | Pub/Sub | Mensajería publish-subscribe entre clientes |
 | Soporte multi-instancia | Replicación y alta disponibilidad con múltiples nodos |

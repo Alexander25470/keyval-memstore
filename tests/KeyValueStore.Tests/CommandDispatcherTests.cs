@@ -124,6 +124,8 @@ public class CommandDispatcherTests
         await Exec("SET k v");
         Assert.Equal("+string\r\n", await Exec("TYPE k"));
     }
+    [Fact] public async Task Type_Set() { await Exec("SADD s a"); Assert.Equal("+set\r\n", await Exec("TYPE s")); }
+    [Fact] public async Task Type_Hash() { await Exec("HSET h f v"); Assert.Equal("+hash\r\n", await Exec("TYPE h")); }
     [Fact] public async Task Type_None() => Assert.Equal("+none\r\n", await Exec("TYPE x"));
 
     // ---- INCR / DECR ----
@@ -142,6 +144,25 @@ public class CommandDispatcherTests
         await Exec("SET k hello");
         Assert.StartsWith("-ERR", await Exec("INCR k"));
     }
+
+    // ---- sets ----
+
+    [Fact] public async Task SAdd_ReturnsCount() => Assert.Equal(":2\r\n", await Exec("SADD s a b"));
+    [Fact] public async Task SRem_ReturnsCount() { await Exec("SADD s a b"); Assert.Equal(":1\r\n", await Exec("SREM s a")); }
+    [Fact] public async Task SMembers_ReturnsArray() { await Exec("SADD s a"); Assert.Equal("*1\r\n$1\r\na\r\n", await Exec("SMEMBERS s")); }
+    [Fact] public async Task SIsMember_True() { await Exec("SADD s a"); Assert.Equal(":1\r\n", await Exec("SISMEMBER s a")); }
+    [Fact] public async Task SIsMember_False() => Assert.Equal(":0\r\n", await Exec("SISMEMBER s x"));
+    [Fact] public async Task SCard_ReturnsCount() { await Exec("SADD s a b"); Assert.Equal(":2\r\n", await Exec("SCARD s")); }
+
+    // ---- hashes ----
+
+    [Fact] public async Task HSet_ReturnsOne() => Assert.Equal(":1\r\n", await Exec("HSET h f v"));
+    [Fact] public async Task HGet_ReturnsValue() { await Exec("HSET h f v"); Assert.Equal("$1\r\nv\r\n", await Exec("HGET h f")); }
+    [Fact] public async Task HGet_Missing_ReturnsNull() => Assert.Equal("$-1\r\n", await Exec("HGET h f"));
+    [Fact] public async Task HDel_ReturnsCount() { await Exec("HSET h a 1"); await Exec("HSET h b 2"); Assert.Equal(":1\r\n", await Exec("HDEL h a")); }
+    [Fact] public async Task HGetAll_ReturnsArray() { await Exec("HSET h a 1"); Assert.Equal("*2\r\n$1\r\na\r\n$1\r\n1\r\n", await Exec("HGETALL h")); }
+    [Fact] public async Task HExists_True() { await Exec("HSET h f v"); Assert.Equal(":1\r\n", await Exec("HEXISTS h f")); }
+    [Fact] public async Task HLen_ReturnsCount() { await Exec("HSET h a 1"); await Exec("HSET h b 2"); Assert.Equal(":2\r\n", await Exec("HLEN h")); }
 
     // ---- unknown command ----
 

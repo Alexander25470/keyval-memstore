@@ -69,6 +69,21 @@ public class CommandDispatcher
         h["INCR"]     = (args, w) => HandleIncr(args, store, w);
         h["DECR"]     = (args, w) => HandleDecr(args, store, w);
 
+        // ---- set commands ----
+        h["SADD"]      = (args, w) => HandleSAdd(args, store, w);
+        h["SREM"]      = (args, w) => HandleSRem(args, store, w);
+        h["SMEMBERS"]  = (args, w) => HandleSMembers(args, store, w);
+        h["SISMEMBER"] = (args, w) => HandleSIsMember(args, store, w);
+        h["SCARD"]     = (args, w) => HandleSCard(args, store, w);
+
+        // ---- hash commands ----
+        h["HSET"]      = (args, w) => HandleHSet(args, store, w);
+        h["HGET"]      = (args, w) => HandleHGet(args, store, w);
+        h["HDEL"]      = (args, w) => HandleHDel(args, store, w);
+        h["HGETALL"]   = (args, w) => HandleHGetAll(args, store, w);
+        h["HEXISTS"]   = (args, w) => HandleHExists(args, store, w);
+        h["HLEN"]      = (args, w) => HandleHLen(args, store, w);
+
         return h;
     }
 
@@ -150,8 +165,8 @@ public class CommandDispatcher
     private static async ValueTask HandleType(string[] args, InMemoryStore store, RespWriter writer)
     {
         if (args.Length != 2) { await writer.WriteError("wrong number of arguments for 'TYPE' command"); return; }
-        var value = store.Get(args[1]);
-        await (value is null ? writer.WriteTypeNone() : writer.WriteTypeString());
+        var type = store.Type(args[1]);
+        await writer.WriteSimpleString(type);
     }
 
     // ---- string commands ----
@@ -199,6 +214,79 @@ public class CommandDispatcher
         if (args.Length != 2) { await writer.WriteError("wrong number of arguments for 'DECR' command"); return; }
         try { await writer.WriteInteger(store.Decr(args[1])); }
         catch (InvalidOperationException) { await writer.WriteError("value is not an integer or out of range"); }
+    }
+
+    // ---- set commands ----
+
+    private static async ValueTask HandleSAdd(string[] args, InMemoryStore store, RespWriter writer)
+    {
+        if (args.Length < 3) { await writer.WriteError("wrong number of arguments for 'SADD' command"); return; }
+        int count = store.SAdd(args[1], args[2..]);
+        await writer.WriteInteger(count);
+    }
+
+    private static async ValueTask HandleSRem(string[] args, InMemoryStore store, RespWriter writer)
+    {
+        if (args.Length < 3) { await writer.WriteError("wrong number of arguments for 'SREM' command"); return; }
+        int count = store.SRem(args[1], args[2..]);
+        await writer.WriteInteger(count);
+    }
+
+    private static async ValueTask HandleSMembers(string[] args, InMemoryStore store, RespWriter writer)
+    {
+        if (args.Length != 2) { await writer.WriteError("wrong number of arguments for 'SMEMBERS' command"); return; }
+        await writer.WriteArray(store.SMembers(args[1]));
+    }
+
+    private static async ValueTask HandleSIsMember(string[] args, InMemoryStore store, RespWriter writer)
+    {
+        if (args.Length != 3) { await writer.WriteError("wrong number of arguments for 'SISMEMBER' command"); return; }
+        await writer.WriteInteger(store.SIsMember(args[1], args[2]) ? 1 : 0);
+    }
+
+    private static async ValueTask HandleSCard(string[] args, InMemoryStore store, RespWriter writer)
+    {
+        if (args.Length != 2) { await writer.WriteError("wrong number of arguments for 'SCARD' command"); return; }
+        await writer.WriteInteger(store.SCard(args[1]));
+    }
+
+    // ---- hash commands ----
+
+    private static async ValueTask HandleHSet(string[] args, InMemoryStore store, RespWriter writer)
+    {
+        if (args.Length != 4) { await writer.WriteError("wrong number of arguments for 'HSET' command"); return; }
+        int count = store.HSet(args[1], args[2], args[3]);
+        await writer.WriteInteger(count);
+    }
+
+    private static async ValueTask HandleHGet(string[] args, InMemoryStore store, RespWriter writer)
+    {
+        if (args.Length != 3) { await writer.WriteError("wrong number of arguments for 'HGET' command"); return; }
+        await writer.WriteBulkString(store.HGet(args[1], args[2]));
+    }
+
+    private static async ValueTask HandleHDel(string[] args, InMemoryStore store, RespWriter writer)
+    {
+        if (args.Length < 3) { await writer.WriteError("wrong number of arguments for 'HDEL' command"); return; }
+        await writer.WriteInteger(store.HDel(args[1], args[2..]));
+    }
+
+    private static async ValueTask HandleHGetAll(string[] args, InMemoryStore store, RespWriter writer)
+    {
+        if (args.Length != 2) { await writer.WriteError("wrong number of arguments for 'HGETALL' command"); return; }
+        await writer.WriteArray(store.HGetAll(args[1]));
+    }
+
+    private static async ValueTask HandleHExists(string[] args, InMemoryStore store, RespWriter writer)
+    {
+        if (args.Length != 3) { await writer.WriteError("wrong number of arguments for 'HEXISTS' command"); return; }
+        await writer.WriteInteger(store.HExists(args[1], args[2]) ? 1 : 0);
+    }
+
+    private static async ValueTask HandleHLen(string[] args, InMemoryStore store, RespWriter writer)
+    {
+        if (args.Length != 2) { await writer.WriteError("wrong number of arguments for 'HLEN' command"); return; }
+        await writer.WriteInteger(store.HLen(args[1]));
     }
 }
 

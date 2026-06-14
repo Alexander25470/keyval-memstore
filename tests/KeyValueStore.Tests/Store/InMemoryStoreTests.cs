@@ -285,4 +285,146 @@ public class InMemoryStoreTests
 
         Assert.Equal(0, _store.DBSize());
     }
+
+    // ---- sets ----
+
+    [Fact]
+    public void SAdd_NewSet_ReturnsCount()
+    {
+        Assert.Equal(2, _store.SAdd("s", "a", "b"));
+        Assert.Equal(1, _store.SAdd("s", "c"));
+    }
+
+    [Fact]
+    public void SAdd_Duplicates_NotCounted()
+    {
+        _store.SAdd("s", "a", "b");
+        Assert.Equal(1, _store.SAdd("s", "a", "c")); // only c is new
+    }
+
+    [Fact]
+    public void SRem_RemovesMembers()
+    {
+        _store.SAdd("s", "a", "b", "c");
+        Assert.Equal(2, _store.SRem("s", "a", "c", "x"));
+    }
+
+    [Fact]
+    public void SRem_MissingKey_ReturnsZero()
+    {
+        Assert.Equal(0, _store.SRem("missing", "a"));
+    }
+
+    [Fact]
+    public void SMembers_ReturnsAll()
+    {
+        _store.SAdd("s", "a", "b");
+        var m = _store.SMembers("s");
+        Assert.Equal(2, m.Length);
+    }
+
+    [Fact]
+    public void SMembers_Missing_ReturnsEmpty()
+    {
+        Assert.Empty(_store.SMembers("x"));
+    }
+
+    [Fact]
+    public void SIsMember_ChecksExistence()
+    {
+        _store.SAdd("s", "a");
+        Assert.True(_store.SIsMember("s", "a"));
+        Assert.False(_store.SIsMember("s", "b"));
+    }
+
+    [Fact]
+    public void SCard_ReturnsCount() { _store.SAdd("s", "a", "b"); Assert.Equal(2, _store.SCard("s")); }
+    [Fact]
+    public void SCard_Missing_ReturnsZero() => Assert.Equal(0, _store.SCard("x"));
+
+    [Fact]
+    public void Set_GetOnSet_ReturnsNull()
+    {
+        _store.SAdd("s", "a");
+        Assert.Null(_store.Get("s"));
+    }
+
+    // ---- hashes ----
+
+    [Fact]
+    public void HSet_NewField_ReturnsOne()
+    {
+        Assert.Equal(1, _store.HSet("h", "name", "Alice"));
+        Assert.Equal(1, _store.HSet("h", "age", "30"));
+    }
+
+    [Fact]
+    public void HSet_Overwrite_SameCount() => Assert.Equal(1, _store.HSet("h", "f", "v2"));
+
+    [Fact]
+    public void HGet_ReturnsValue()
+    {
+        _store.HSet("h", "f", "v");
+        Assert.Equal("v", _store.HGet("h", "f"));
+    }
+
+    [Fact]
+    public void HGet_Missing_ReturnsNull()
+    {
+        Assert.Null(_store.HGet("x", "f"));
+        _store.HSet("h", "f", "v");
+        Assert.Null(_store.HGet("h", "g"));
+    }
+
+    [Fact]
+    public void HDel_RemovesFields()
+    {
+        _store.HSet("h", "a", "1"); _store.HSet("h", "b", "2");
+        Assert.Equal(1, _store.HDel("h", "a", "x"));
+    }
+
+    [Fact]
+    public void HDel_Missing_ReturnsZero() => Assert.Equal(0, _store.HDel("x", "f"));
+
+    [Fact]
+    public void HGetAll_ReturnsAll()
+    {
+        _store.HSet("h", "a", "1"); _store.HSet("h", "b", "2");
+        var all = _store.HGetAll("h");
+        Assert.Equal(4, all.Length); // key,value,key,value
+    }
+
+    [Fact]
+    public void HExists_ChecksField()
+    {
+        _store.HSet("h", "f", "v");
+        Assert.True(_store.HExists("h", "f"));
+        Assert.False(_store.HExists("h", "g"));
+    }
+
+    [Fact]
+    public void HLen_ReturnsCount() { _store.HSet("h", "a", "1"); _store.HSet("h", "b", "2"); Assert.Equal(2, _store.HLen("h")); }
+    [Fact]
+    public void HLen_Missing_ReturnsZero() => Assert.Equal(0, _store.HLen("x"));
+
+    [Fact]
+    public void Hash_GetOnHash_ReturnsNull()
+    {
+        _store.HSet("h", "f", "v");
+        Assert.Null(_store.Get("h"));
+    }
+
+    // ---- type ----
+
+    [Fact]
+    public void Type_ReturnsCorrect()
+    {
+        _store.Set("s", "v");
+        _store.SAdd("set", "a");
+        _store.HSet("hash", "f", "v");
+        Assert.Equal("string", _store.Type("s"));
+        Assert.Equal("set", _store.Type("set"));
+        Assert.Equal("hash", _store.Type("hash"));
+        Assert.Equal("none", _store.Type("missing"));
+    }
 }
