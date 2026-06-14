@@ -14,43 +14,30 @@ namespace KeyValueStore.Tests;
 /// These tests exercise the server through the same API that production
 /// applications use against real Redis, validating RESP2 protocol compliance.
 /// </summary>
-public class StackExchangeRedisCompatibilityTests : IAsyncLifetime
+public class StackExchangeRedisCompatibilityTests : IClassFixture<ServerFixture>, IAsyncLifetime
 {
-    private readonly CancellationTokenSource _cts = new();
+    private readonly ServerFixture _fixture;
     private readonly int _port;
-    private Task _serverTask = Task.CompletedTask;
     private ConnectionMultiplexer _redis = null!;
     private IDatabase _db = null!;
 
-    public StackExchangeRedisCompatibilityTests()
+    public StackExchangeRedisCompatibilityTests(ServerFixture fixture)
     {
-        _port = GetRandomPort();
+        _fixture = fixture;
+        _port = fixture.Port;
     }
 
     public async Task InitializeAsync()
     {
-        // ---- start the KeyValueStore server on a random port ----
-        var store = new InMemoryStore();
-        var hub = new PubSubHub();
-        var dispatcher = new CommandDispatcher(store, hub);
-        var server = new KvServer(dispatcher, hub, "127.0.0.1", _port);
-        _ = store.RunExpirationLoop(_cts.Token);
-        _serverTask = server.RunAsync(_cts.Token);
-
-        // Wait until the server is actually listening.
-        using var ctsConnect = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        while (!ctsConnect.Token.IsCancellationRequested)
+        // ---- flush state from previous test ----
+        using (var flush = await ConnectionMultiplexer.ConnectAsync(new ConfigurationOptions
         {
-            try
-            {
-                using var test = new TcpClient();
-                await test.ConnectAsync(IPAddress.Loopback, _port, ctsConnect.Token);
-                break;
-            }
-            catch
-            {
-                await Task.Delay(50, ctsConnect.Token);
-            }
+            EndPoints = { { IPAddress.Loopback, _port } },
+            AbortOnConnectFail = false,
+            ConnectTimeout = 5000,
+        }))
+        {
+            await flush.GetDatabase().ExecuteAsync("FLUSHALL");
         }
 
         // ---- connect via StackExchange.Redis ----
@@ -73,19 +60,6 @@ public class StackExchangeRedisCompatibilityTests : IAsyncLifetime
             await _redis.CloseAsync();
             _redis.Dispose();
         }
-
-        _cts.Cancel();
-        try { await _serverTask; } catch (OperationCanceledException) { }
-        _cts.Dispose();
-    }
-
-    private static int GetRandomPort()
-    {
-        var l = new TcpListener(IPAddress.Loopback, 0);
-        l.Start();
-        int port = ((IPEndPoint)l.LocalEndpoint).Port;
-        l.Stop();
-        return port;
     }
 
     // ========================================================================

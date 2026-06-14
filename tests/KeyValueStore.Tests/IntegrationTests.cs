@@ -15,31 +15,21 @@ namespace KeyValueStore.Tests;
 /// responses decoded with <see cref="RespReader.ReadValue"/> — proving the
 /// server correctly speaks RESP2 in both directions.
 /// </summary>
-public class IntegrationTests : IAsyncDisposable
+public class IntegrationTests : IClassFixture<ServerFixture>, IAsyncLifetime
 {
-    private readonly CancellationTokenSource _cts = new();
+    private readonly ServerFixture _fixture;
     private readonly int _port;
-    private readonly Task _serverTask;
 
-    public IntegrationTests()
+    public IntegrationTests(ServerFixture fixture)
     {
-        _port = GetRandomPort();
-        var store = new InMemoryStore();
-        var hub = new PubSubHub();
-        var dispatcher = new CommandDispatcher(store, hub);
-        var server = new KvServer(dispatcher, hub, "127.0.0.1", _port);
-        _ = store.RunExpirationLoop(_cts.Token);
-        _serverTask = server.RunAsync(_cts.Token);
+        _fixture = fixture;
+        _port = fixture.Port;
     }
 
-    private static int GetRandomPort()
-    {
-        var l = new TcpListener(IPAddress.Loopback, 0);
-        l.Start();
-        int port = ((IPEndPoint)l.LocalEndpoint).Port;
-        l.Stop();
-        return port;
-    }
+    /// <summary>Flush the store before each test so tests never interfere.</summary>
+    public async Task InitializeAsync() => await Send(["FLUSHALL"]);
+
+    public Task DisposeAsync() => Task.CompletedTask;
 
     /// <summary>Encodes a command with RespWriter, sends it, and decodes the response with RespReader.</summary>
     private async Task<string[]> Send(string[] command)
@@ -145,11 +135,5 @@ public class IntegrationTests : IAsyncDisposable
         for (int i = 0; i < 20; i++) tasks[i] = Task.Run(() => Send(["INCR", "shared"]));
         await Task.WhenAll(tasks);
         Assert.Equal(["20"], await Send(["GET", "shared"]));
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        _cts.Cancel();
-        try { await _serverTask; } catch (OperationCanceledException) { }
     }
 }
