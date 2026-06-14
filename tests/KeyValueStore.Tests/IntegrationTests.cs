@@ -1,5 +1,7 @@
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Text;
 using KeyValueStore.Server;
 using KeyValueStore.Server.Networking;
 using KeyValueStore.Server.PubSub;
@@ -48,11 +50,13 @@ public class IntegrationTests : IAsyncDisposable
 
         // Encode command as a proper RESP array.
         var writer = new RespWriter(stream);
-        await writer.WriteArray(command);
+        var cmdBytes = command.Select(s => new ReadOnlyMemory<byte>(Encoding.ASCII.GetBytes(s))).ToArray();
+        await writer.WriteArray(cmdBytes);
 
         // Decode the response as any RESP value.
         var reader = new RespReader();
-        return await reader.ReadValue(stream);
+        var result = await reader.ReadValue(stream);
+        return result.Select(r => Encoding.ASCII.GetString(r.Span)).ToArray();
     }
 
     // ---- tests ----
@@ -128,7 +132,8 @@ public class IntegrationTests : IAsyncDisposable
         using var c = new TcpClient(); await c.ConnectAsync(IPAddress.Loopback, _port);
         c.GetStream().Write("PING\r\n"u8); await c.GetStream().FlushAsync();
         // Response is a simple string (+PONG), not an inline command. Use ReadValue.
-        Assert.Equal(["PONG"], await new RespReader().ReadValue(c.GetStream()));
+        var resp = await new RespReader().ReadValue(c.GetStream());
+        Assert.Equal(["PONG"], resp.Select(r => Encoding.ASCII.GetString(r.Span)).ToArray());
     }
 
     // ---- concurrency ----

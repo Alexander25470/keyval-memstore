@@ -1,6 +1,6 @@
 using System.Buffers;
 using System.Net.Sockets;
-using System.Text;
+using System.Runtime.CompilerServices;
 using KeyValueStore.Server.Exceptions;
 
 namespace KeyValueStore.Server.Resp;
@@ -16,12 +16,6 @@ public class RespReader : IDisposable
     private int _pos;
     private int _total;
 
-    // Latin-1 (ISO-8859-1) is used for bulk string decoding to ensure
-    // binary-safe round-trips. Every byte 0-255 maps 1:1 to a Unicode
-    // code point, so non-UTF8 binary data (e.g. SE.Redis ECHO tracer)
-    // survives the byte→string→byte round-trip without corruption.
-    private static readonly Encoding Latin1 = Encoding.GetEncoding("ISO-8859-1");
-
     public RespReader(int bufferSize = 4096)
     {
         _buffer = ArrayPool<byte>.Shared.Rent(bufferSize);
@@ -33,7 +27,7 @@ public class RespReader : IDisposable
     /// Handles pipelined data: leftover bytes from a previous read are consumed
     /// before reading more from the stream.
     /// </summary>
-    public async ValueTask<string[]?> ReadCommand(Stream stream)
+    public async ValueTask<ReadOnlyMemory<byte>[]?> ReadCommand(Stream stream)
     {
         // If we have leftover data from a previous read, parse the next command from it.
         if (_pos >= _total)
@@ -52,7 +46,7 @@ public class RespReader : IDisposable
     }
 
     /// <summary>Parse an inline command from remaining buffer data, consuming up to CRLF.</summary>
-    private string[] ParseInlineRemaining()
+    private ReadOnlyMemory<byte>[] ParseInlineRemaining()
     {
         int start = _pos;
         while (_pos < _total && !(_pos + 1 < _total && _buffer[_pos] == '\r' && _buffer[_pos + 1] == '\n'))
@@ -60,9 +54,39 @@ public class RespReader : IDisposable
         if (_pos + 1 >= _total)
             throw NewProtocol("Inline command missing CRLF");
 
-        var result = Latin1.GetString(_buffer, start, _pos - start)
-            .Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        _pos += 2; // skip CRLF
+        var line = _buffer.AsMemory(start, _pos - start);
+        _pos += 2;
+        return SplitInlineBytes(line);
+    }
+
+    private static ReadOnlyMemory<byte>[] SplitInlineBytes(ReadOnlyMemory<byte> line)
+    {
+        var span = line.Span;
+        int parts = 0;
+        bool inWord = false;
+        for (int i = 0; i < span.Length; i++)
+        {
+            if (span[i] == ' ') { inWord = false; }
+            else if (!inWord) { parts++; inWord = true; }
+        }
+
+        var result = new ReadOnlyMemory<byte>[parts];
+        int idx = 0, wordStart = -1;
+        for (int i = 0; i <= span.Length; i++)
+        {
+            if (i < span.Length && span[i] != ' ')
+            {
+                if (wordStart < 0) wordStart = i;
+            }
+            else
+            {
+                if (wordStart >= 0)
+                {
+                    result[idx++] = line.Slice(wordStart, i - wordStart);
+                    wordStart = -1;
+                }
+            }
+        }
         return result;
     }
 
@@ -72,10 +96,10 @@ public class RespReader : IDisposable
     /// For simple types: [value]. For arrays: [item1, item2, ...].
     /// For null bulk strings: empty array.
     /// </summary>
-    public async ValueTask<string[]> ReadValue(Stream stream)
+    public async ValueTask<ReadOnlyMemory<byte>[]> ReadValue(Stream stream)
     {
         _total = await stream.ReadAsync(_buffer, 0, _buffer.Length);
-        if (_total == 0) return Array.Empty<string>();
+        if (_total == 0) return Array.Empty<ReadOnlyMemory<byte>>();
         _pos = 0;
 
         if (_buffer[0] == (byte)'*') return await ReadArray(stream);
@@ -84,17 +108,17 @@ public class RespReader : IDisposable
         if (_buffer[0] is (byte)'+' or (byte)'-' or (byte)':')
         {
             var line = await ReadAnyLine(stream, 1);
-            return [Latin1.GetString(_buffer, 1, line - 1)];
+            return [_buffer.AsMemory(1, line - 1)];
         }
 
         // Bulk string: read header + body.
         if (_buffer[0] == (byte)'$')
         {
             var val = await ReadBulkString(stream);
-            return val.Length == 0 ? Array.Empty<string>() : [val];
+            return val.Length == 0 ? Array.Empty<ReadOnlyMemory<byte>>() : [val];
         }
 
-        return Array.Empty<string>();
+        return Array.Empty<ReadOnlyMemory<byte>>();
     }
 
     /// <summary>Reads bytes until CRLF, starting from current _pos. Returns position after CRLF.</summary>
@@ -115,21 +139,19 @@ public class RespReader : IDisposable
 
     // ---- RESP array ----
 
-    private async ValueTask<string[]> ReadArray(Stream stream)
+    private async ValueTask<ReadOnlyMemory<byte>[]> ReadArray(Stream stream)
     {
         _pos++; // skip '*'
         int count = (int)ReadInt(_buffer, ref _pos, _total);
         ExpectCRLF(_buffer, ref _pos);
 
-        var args = new string[count];
+        var args = new ReadOnlyMemory<byte>[count];
         for (int i = 0; i < count; i++)
-        {
             args[i] = await ReadBulkString(stream);
-        }
         return args;
     }
 
-    private async Task<string> ReadBulkString(Stream stream)
+    private async ValueTask<ReadOnlyMemory<byte>> ReadBulkString(Stream stream)
     {
         // Read header: $LEN\r\n — consume from buffer first, then stream if needed.
         int headerStart = _pos;
@@ -161,11 +183,9 @@ public class RespReader : IDisposable
             len = len * 10 + (header[idx++] - '0');
         len *= sign;
 
-        if (len == -1) return string.Empty;
-        if (len < 0)   throw NewProtocol($"Negative bulk string length: {len}");
-        if (len == 0)  return string.Empty;
+        if (len < -1) throw NewProtocol($"Negative bulk string length: {len}");
+        if (len == -1) return ReadOnlyMemory<byte>.Empty;
 
-        // Read body: len bytes + \r\n
         int needed = len + 2 - (_total - _pos);
         if (needed > 0)
             await ReadMore(stream, needed);
@@ -173,9 +193,9 @@ public class RespReader : IDisposable
         if (_total - _pos < len + 2)
             throw NewProtocol("Unexpected end of stream reading bulk string data");
 
-        string value = Latin1.GetString(_buffer, _pos, len);
-        _pos += len + 2; // skip value + CRLF
-        return value;
+        var result = _buffer.AsMemory(_pos, Math.Max(0, len));
+        _pos += len + 2;
+        return result;
     }
 
     private async Task<int> ReadMore(Stream stream, int minBytes)
@@ -192,20 +212,6 @@ public class RespReader : IDisposable
         int read = await stream.ReadAsync(_buffer, _total, toRead);
         _total += read;
         return read;
-    }
-
-    // ---- inline parsing (synchronous, no async needed) ----
-
-    private static string[] ParseInline(Span<byte> span)
-    {
-        int end = 0;
-        while (end < span.Length - 1 && !(span[end] == '\r' && span[end + 1] == '\n'))
-            end++;
-        if (end >= span.Length)
-            throw NewProtocol("Inline command missing CRLF");
-
-        return Latin1.GetString(span[..end])
-            .Split(' ', StringSplitOptions.RemoveEmptyEntries);
     }
 
     // ---- low-level helpers ----

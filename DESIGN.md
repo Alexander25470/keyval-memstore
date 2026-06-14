@@ -17,9 +17,9 @@ flowchart TB
         direction TB
         subgraph Sessions["ClientSession (× N)"]
             direction LR
-            RR[RespReader<br/>RESP → string[]]
+            RR[RespReader<br/>RESP → ReadOnlyMemory&lt;byte&gt;[]]
             CD[CommandDispatcher<br/>arity → ruteo → ejecución]
-            RW[RespWriter<br/>string[] → RESP]
+            RW[RespWriter<br/>ReadOnlyMemory&lt;byte&gt; → RESP]
             RR --> CD --> RW
         end
         subgraph Store["InMemoryStore"]
@@ -54,7 +54,7 @@ sequenceDiagram
 
     C->>CS: *3\r\n$3\r\nSET\r\n…
     CS->>RR: ReadCommand(stream)
-    RR-->>CS: ["SET", "foo", "bar"]
+    RR-->>CS: ReadOnlyMemory&lt;byte&gt;[]
     CS->>CD: ExecuteAsync(args, writer)
     CD->>IMS: Set("foo", "bar")
     CD->>RW: WriteOk()
@@ -99,12 +99,25 @@ Redis usa exactamente esta combinación.
 
 ### 2.5 Estrategia zero-allocation
 
-Cada request TCP genera objetos temporales que el garbage collector debe limpiar. A alto volumen, esto produce pausas que degradan la latencia. Para mitigarlo se aplicaron dos optimizaciones:
+Cada request TCP genera objetos temporales que el garbage collector debe limpiar. A alto volumen, esto produce pausas que degradan la latencia. Para mitigarlo se aplicaron: tres optimizaciones:
 
 - **`RespReader`**: el buffer donde se leen los bytes del socket se pide prestado a un pool (`ArrayPool<byte>.Shared`) y se devuelve al cerrar la conexión. Se evita asignar un buffer nuevo por cada request.
 - **`RespWriter`**: en vez de construir la respuesta con `StringBuilder`, convertirla a `string` y luego a `byte[]`, se escribe directo a bytes usando `ArrayBufferWriter<byte>`. Esto evita dos asignaciones por respuesta.
+- **Pipeline de datos en `byte[]`**: los comandos se leen como `ReadOnlyMemory<byte>[]` apuntando directamente al buffer interno del `RespReader` (zero-copy). Los valores se almacenan como `byte[]` en el store, sin conversiones de encoding. Sets y hashes usan `ByteArrayComparer` para igualdad estructural de bytes.
 
 El resultado es menos presión sobre el garbage collector y latencia más pareja bajo carga.
+
+### 2.6 Tradeoffs encontrados al integrar con StackExchange.Redis
+
+Al validar el servidor contra el cliente .NET más popular (`StackExchange.Redis`) surgieron varios problemas que forzaron decisiones de diseño adicionales:
+
+**Comandos faltantes.** SE.Redis envía durante el handshake comandos que Redis real soporta pero nuestro servidor no tenía: `CLIENT SETNAME`, `CLIENT SETINFO`, `CLIENT ID`, `HELLO` (negociación RESP3), `SETEX`, `PSETEX`, `PTTL`, `CONFIG GET`, `INFO`, `CLUSTER NODES`, `SENTINEL MASTERS`. Los primeros seis se implementaron; el resto devuelven error y SE.Redis los tolera.
+
+**Pipelining en el buffer.** SE.Redis envía múltiples comandos en una sola ráfaga TCP (ej. `CLIENT SETNAME` + `CLIENT SETINFO` + `ECHO`). El `RespReader` original leía todo del socket, procesaba solo el primer comando y descartaba el resto. Se corrigió para consumir comandos del buffer remanente antes de leer más del stream.
+
+**Encoding y binary-safety.** SE.Redis valida la conexión con un `ECHO` que contiene bytes aleatorios binarios (tracer). El `RespReader` usaba `UTF8.GetString` para decodificar bulk strings, y `RespWriter` usaba `UTF8.GetBytes` para codificarlas. El round-trip `bytes → UTF-8 string → UTF-8 bytes` corrompe datos no-UTF8 (caracteres de reemplazo U+FFFD). Se migró todo el pipeline de datos a `ReadOnlyMemory<byte>`/`byte[]` — no hay ningún encoding intermedio, igual que Redis real en C.
+
+**Conexiones de suscripción.** SE.Redis abre conexiones separadas para pub/sub y suscribe al canal interno `__Booksleeve_MasterChanged`. Nuestro `SUBSCRIBE` requiere una sesión activa, por lo que esta suscripción falla, pero SE.Redis continúa operando correctamente por la conexión interactiva. **Pendiente**: crear sesión automáticamente al recibir `SUBSCRIBE`/`PSUBSCRIBE` sin sesión previa.
 
 ---
 
@@ -141,8 +154,10 @@ KvServer (1 Task)
 | `RespReaderTests` | 12 | Parseo de arrays RESP, comandos inline, edge cases |
 | `RespWriterTests` | 17 | Todos los tipos RESP, null/empty, round-trip |
 | `CommandDispatcherTests` | 42 | Los 26 comandos, errores por cantidad incorrecta de argumentos, comandos desconocidos |
+| `PubSubCommandsTests` | 15 | Publicar, suscribir, unsubscribe, sesiones |
 | `IntegrationTests` | 18 | TCP real con `RespWriter`/`RespReader` en ambos extremos |
-| **Total** | **143** | **0 fallados, ~1.6s** |
+| `StackExchangeRedisCompatibilityTests` | 29 | Validación de compatibilidad con la librería `StackExchange.Redis` |
+| **Total** | **185** | **28/29 SE.Redis, 100% resto** |
 
 ---
 
@@ -152,8 +167,15 @@ KvServer (1 Task)
 |---|---|---|
 | `PING [msg]` | Server | `+PONG` o eco |
 | `ECHO msg` | Server | Eco como bulk string |
+| `HELLO` | Server | Negociación RESP3 → responde con proto=2 |
+| `CLIENT SETNAME\|SETINFO\|ID` | Server | Handshake de cliente (StackExchange.Redis) |
+| `QUIT` | Server | Cerrar conexión |
 | `SET key value [EX s\|PX ms]` | String | Setear con TTL opcional |
+| `SETEX key seconds value` | String | SET con expiración en segundos |
+| `PSETEX key ms value` | String | SET con expiración en milisegundos |
 | `GET key` | String | Obtener valor o null |
+| `INCR key` | String | Incremento atómico |
+| `DECR key` | String | Decremento atómico |
 | `DEL key […]` | Key | Borrar keys, retorna count |
 | `EXISTS key […]` | Key | Contar keys existentes |
 | `KEYS pattern` | Key | Glob match (`*`, `?`) |
@@ -161,10 +183,8 @@ KvServer (1 Task)
 | `FLUSHALL` | Key | Vaciar el store |
 | `EXPIRE key seconds` | Key | Setear TTL |
 | `TTL key` | Key | Segundos restantes |
+| `PTTL key` | Key | Milisegundos restantes |
 | `TYPE key` | Key | `string`, `set`, `hash` o `none` |
-| `INCR key` | String | Incremento atómico |
-| `DECR key` | String | Decremento atómico |
-| `QUIT` | Server | Cerrar conexión |
 | `SADD key member […]` | Set | Agregar miembros |
 | `SREM key member […]` | Set | Eliminar miembros |
 | `SMEMBERS key` | Set | Listar todos los miembros |
@@ -183,5 +203,6 @@ KvServer (1 Task)
 
 | Mejora | Descripción |
 |---|---|
-| Pub/Sub | Mensajería publish-subscribe entre clientes |
+| Migración de keys a `byte[]` | Las keys del store todavía son `string`. Migrar a `byte[]` con `ByteArrayComparer` para binary-safe completo en keys (ver plan en `.github/prompts/plan-migrateToBytes.prompt.md`) |
+| Suscripción sin sesión previa | SE.Redis envía `SUBSCRIBE` en conexiones frescas sin `ClientSession`. Crear sesión automáticamente al recibir `SUBSCRIBE`/`PSUBSCRIBE` sin sesión activa. |
 | Soporte multi-instancia | Replicación y alta disponibilidad con múltiples nodos |

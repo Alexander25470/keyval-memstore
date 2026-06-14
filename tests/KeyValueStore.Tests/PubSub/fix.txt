@@ -30,9 +30,6 @@ public class PubSubCommandsTests
         return Encoding.UTF8.GetString(ms.ToArray());
     }
 
-    private static ReadOnlyMemory<byte>[] ToArgs(string cmd) =>
-        cmd.Split(' ').Select(s => new ReadOnlyMemory<byte>(Encoding.ASCII.GetBytes(s))).ToArray();
-
     [Fact] public async Task Publish_ReturnsZero() => Assert.Equal(":0\r\n", await Exec("PUBLISH foo msg"));
     [Fact] public async Task Publish_WrongArity_ReturnsError() => Assert.StartsWith("-ERR", await Exec("PUBLISH foo"));
     [Fact] public async Task Subscribe_WrongArity_ReturnsError() => Assert.StartsWith("-ERR", await Exec("SUBSCRIBE"));
@@ -49,7 +46,7 @@ public class PubSubCommandsTests
         var session = new StubSession();
         using var ms = new MemoryStream();
         var writer = new RespWriter(ms);
-        await _dispatcher.ExecuteAsync(ToArgs("SUBSCRIBE foo"), writer, session);
+        await _dispatcher.ExecuteAsync("SUBSCRIBE foo".Split(' '), writer, session);
         ms.Position = 0;
         var resp = Encoding.UTF8.GetString(ms.ToArray());
         Assert.StartsWith("*3", resp);
@@ -63,7 +60,7 @@ public class PubSubCommandsTests
         var session = new StubSession();
         using var ms = new MemoryStream();
         var writer = new RespWriter(ms);
-        await _dispatcher.ExecuteAsync(ToArgs("SUBSCRIBE foo"), writer, session);
+        await _dispatcher.ExecuteAsync("SUBSCRIBE foo".Split(' '), writer, session);
         Assert.Equal(":1\r\n", await Exec("PUBLISH foo hi"));
     }
 
@@ -73,13 +70,14 @@ public class PubSubCommandsTests
         var session = new StubSession();
         using var ms = new MemoryStream();
         var writer = new RespWriter(ms);
-        await _dispatcher.ExecuteAsync(ToArgs("SUBSCRIBE a"), writer, session);
-        await _dispatcher.ExecuteAsync(ToArgs("SUBSCRIBE b"), writer, session);
+        await _dispatcher.ExecuteAsync("SUBSCRIBE a".Split(' '), writer, session);
+        await _dispatcher.ExecuteAsync("SUBSCRIBE b".Split(' '), writer, session);
         Assert.Equal(":1\r\n", await Exec("PUBLISH a msg"));
         session.EnterSubscriptionMode(SubscriptionMode.None);
         using var ms2 = new MemoryStream();
         var writer2 = new RespWriter(ms2);
-        await _dispatcher.ExecuteAsync(ToArgs("UNSUBSCRIBE"), writer2, session);
+        var unsub = "UNSUBSCRIBE".Split(' ').Select(s => new ReadOnlyMemory<byte>(Encoding.ASCII.GetBytes(s))).ToArray();
+        await _dispatcher.ExecuteAsync(unsub, writer2, session);
         Assert.Equal(":0\r\n", await Exec("PUBLISH a msg"));
     }
 
@@ -89,7 +87,7 @@ public class PubSubCommandsTests
         var session = new StubSession();
         using var ms = new MemoryStream();
         var writer = new RespWriter(ms);
-        await _dispatcher.ExecuteAsync(ToArgs("PSUBSCRIBE orders.*"), writer, session);
+        await _dispatcher.ExecuteAsync("PSUBSCRIBE orders.*".Split(' '), writer, session);
         Assert.Equal(":0\r\n", await Exec("PUBLISH foo msg"));      // no match
         Assert.Equal(":1\r\n", await Exec("PUBLISH orders.new msg")); // matches
     }
@@ -100,11 +98,11 @@ public class PubSubCommandsTests
         var session = new StubSession();
         using var ms = new MemoryStream();
         var writer = new RespWriter(ms);
-        await _dispatcher.ExecuteAsync(ToArgs("SUBSCRIBE a"), writer, session);
-        await _dispatcher.ExecuteAsync(ToArgs("SUBSCRIBE b"), writer, session);
+        await _dispatcher.ExecuteAsync("SUBSCRIBE a".Split(' '), writer, session);
+        await _dispatcher.ExecuteAsync("SUBSCRIBE b".Split(' '), writer, session);
         using var ms2 = new MemoryStream();
         var writer2 = new RespWriter(ms2);
-        await _dispatcher.ExecuteAsync(ToArgs("UNSUBSCRIBE a"), writer2, session);
+        await _dispatcher.ExecuteAsync("UNSUBSCRIBE a".Split(' '), writer2, session);
         Assert.Equal(":0\r\n", await Exec("PUBLISH a msg"));   // unsubscribed
         Assert.Equal(":1\r\n", await Exec("PUBLISH b msg"));   // still subbed
     }
@@ -115,10 +113,10 @@ public class PubSubCommandsTests
         var session = new StubSession();
         using var ms = new MemoryStream();
         var writer = new RespWriter(ms);
-        await _dispatcher.ExecuteAsync(ToArgs("PSUBSCRIBE foo.*"), writer, session);
+        await _dispatcher.ExecuteAsync("PSUBSCRIBE foo.*".Split(' '), writer, session);
         using var ms2 = new MemoryStream();
         var writer2 = new RespWriter(ms2);
-        await _dispatcher.ExecuteAsync(ToArgs("PUNSUBSCRIBE foo.*"), writer2, session);
+        await _dispatcher.ExecuteAsync("PUNSUBSCRIBE foo.*".Split(' '), writer2, session);
         Assert.Equal(":0\r\n", await Exec("PUBLISH foo.bar msg"));
     }
 }
@@ -128,3 +126,4 @@ internal class StubSession : ClientSession
     // ClientSession constructor only assigns fields, doesn't use them.
     public StubSession() : base(null!, null!, null!) { }
 }
+

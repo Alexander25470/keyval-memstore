@@ -1,3 +1,5 @@
+using System.Linq;
+using System.Text;
 using KeyValueStore.Server.Exceptions;
 using KeyValueStore.Server.Resp;
 
@@ -5,7 +7,19 @@ namespace KeyValueStore.Server.Commands;
 
 public static class ServerCommands
 {
-    public static async ValueTask Ping(string[] args, RespWriter writer)
+    private static readonly ReadOnlyMemory<byte>[] HelloResponse = CreateHelloResponse();
+
+    private static ReadOnlyMemory<byte>[] CreateHelloResponse()
+    {
+        static ReadOnlyMemory<byte> B(string s) => Encoding.ASCII.GetBytes(s);
+        return [B("server"), B("kvstore"), B("version"), B("0.1.0"),
+                B("proto"), B("2"), B("mode"), B("standalone"),
+                B("role"), B("master")];
+    }
+
+    private static string Str(ReadOnlyMemory<byte> b) => Encoding.ASCII.GetString(b.Span);
+
+    public static async ValueTask Ping(ReadOnlyMemory<byte>[] args, RespWriter writer)
     {
         if (args.Length > 2) { await writer.WriteError("wrong number of arguments for 'PING' command"); return; }
         if (args.Length == 2)
@@ -14,7 +28,7 @@ public static class ServerCommands
             await writer.WritePong();
     }
 
-    public static async ValueTask Echo(string[] args, RespWriter writer)
+    public static async ValueTask Echo(ReadOnlyMemory<byte>[] args, RespWriter writer)
     {
         if (args.Length != 2) { await writer.WriteError("wrong number of arguments for 'ECHO' command"); return; }
         await writer.WriteBulkString(args[1]);
@@ -26,29 +40,12 @@ public static class ServerCommands
         throw new QuitException();
     }
 
-    /// <summary>
-    /// Handles HELLO command from clients trying to negotiate RESP3.
-    /// Returns a RESP2-compatible response that tells the client
-    /// (e.g. StackExchange.Redis) to use RESP2 protocol (proto=2).
-    /// </summary>
     public static async ValueTask Hello(RespWriter writer)
     {
-        // Return a RESP2 array of key-value pairs, same format Redis 6+ returns
-        // to RESP2 clients. The critical entry is "proto" = "2".
-        await writer.WriteArray([
-            "server", "kvstore",
-            "version", "0.1.0",
-            "proto", "2",
-            "mode", "standalone",
-            "role", "master",
-        ]);
+        await writer.WriteArray(HelloResponse);
     }
 
-    /// <summary>
-    /// Minimal CLIENT command support (SETNAME, SETINFO, ID).
-    /// StackExchange.Redis sends these during connection handshake.
-    /// </summary>
-    public static async ValueTask Client(string[] args, RespWriter writer)
+    public static async ValueTask Client(ReadOnlyMemory<byte>[] args, RespWriter writer)
     {
         if (args.Length < 2)
         {
@@ -56,7 +53,7 @@ public static class ServerCommands
             return;
         }
 
-        var sub = args[1].ToUpperInvariant();
+        var sub = Str(args[1]).ToUpperInvariant();
         switch (sub)
         {
             case "SETNAME":

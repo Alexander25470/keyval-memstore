@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Text;
 using KeyValueStore.Server.Commands;
 using KeyValueStore.Server.Networking;
 using KeyValueStore.Server.PubSub;
@@ -9,7 +10,7 @@ namespace KeyValueStore.Server;
 
 public class CommandDispatcher
 {
-    public delegate ValueTask Handler(string[] args, RespWriter writer, ClientSession? subscriber);
+    public delegate ValueTask Handler(ReadOnlyMemory<byte>[] args, RespWriter writer, ClientSession? subscriber);
 
     private readonly Dictionary<string, Handler> _handlers;
 
@@ -18,14 +19,14 @@ public class CommandDispatcher
         _handlers = CreateHandlers(store, hub, replication);
     }
 
-    public ValueTask ExecuteAsync(string[] args, RespWriter writer, ClientSession? subscriber = null)
+    public ValueTask ExecuteAsync(ReadOnlyMemory<byte>[] args, RespWriter writer, ClientSession? subscriber = null)
     {
         if (args.Length == 0)
             return writer.WriteError("empty command");
 
-        var command = args[0].ToUpperInvariant();
+        var command = Encoding.ASCII.GetString(args[0].Span).ToUpperInvariant();
         if (!_handlers.TryGetValue(command, out var handler))
-            return writer.WriteError($"unknown command '{args[0]}'");
+            return writer.WriteError($"unknown command '{Encoding.ASCII.GetString(args[0].Span)}'");
 
         return handler(args, writer, subscriber);
     }

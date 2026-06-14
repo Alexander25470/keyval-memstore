@@ -14,13 +14,20 @@ public class RespReaderTests
         return new MemoryStream(Encoding.UTF8.GetBytes(data));
     }
 
+    private static void AssertCmd(ReadOnlyMemory<byte>[]? actual, params string[] expected)
+    {
+        Assert.NotNull(actual);
+        Assert.Equal(expected.Length, actual.Length);
+        for (int i = 0; i < expected.Length; i++)
+            Assert.Equal(expected[i], Encoding.ASCII.GetString(actual[i].Span));
+    }
+
     [Fact]
     public async Task Parse_SET_Command()
     {
         using var ms = MakeStream("*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\nbar\r\n");
         var r = await _reader.ReadCommand(ms);
-        Assert.NotNull(r);
-        Assert.Equal(["SET", "foo", "bar"], r);
+        AssertCmd(r, "SET", "foo", "bar");
     }
 
     [Fact]
@@ -28,8 +35,7 @@ public class RespReaderTests
     {
         using var ms = MakeStream("*2\r\n$3\r\nGET\r\n$3\r\nfoo\r\n");
         var r = await _reader.ReadCommand(ms);
-        Assert.NotNull(r);
-        Assert.Equal(["GET", "foo"], r);
+        AssertCmd(r, "GET", "foo");
     }
 
     [Fact]
@@ -38,7 +44,7 @@ public class RespReaderTests
         using var ms = MakeStream("*1\r\n$4\r\nPING\r\n");
         var r = await _reader.ReadCommand(ms);
         Assert.NotNull(r);
-        Assert.Equal(["PING"], r);
+        AssertCmd(r, "PING");
     }
 
     [Fact]
@@ -47,7 +53,7 @@ public class RespReaderTests
         using var ms = MakeStream("*3\r\n$3\r\nDEL\r\n$1\r\na\r\n$1\r\nb\r\n");
         var r = await _reader.ReadCommand(ms);
         Assert.NotNull(r);
-        Assert.Equal(["DEL", "a", "b"], r);
+        AssertCmd(r, "DEL", "a", "b");
     }
 
     [Fact]
@@ -56,7 +62,7 @@ public class RespReaderTests
         using var ms = MakeStream("PING\r\n");
         var r = await _reader.ReadCommand(ms);
         Assert.NotNull(r);
-        Assert.Equal(["PING"], r);
+        AssertCmd(r, "PING");
     }
 
     [Fact]
@@ -65,7 +71,7 @@ public class RespReaderTests
         using var ms = MakeStream("SET foo bar\r\n");
         var r = await _reader.ReadCommand(ms);
         Assert.NotNull(r);
-        Assert.Equal(["SET", "foo", "bar"], r);
+        AssertCmd(r, "SET", "foo", "bar");
     }
 
     [Fact]
@@ -82,7 +88,7 @@ public class RespReaderTests
         using var ms = MakeStream("*2\r\n$3\r\nSET\r\n$0\r\n\r\n");
         var r = await _reader.ReadCommand(ms);
         Assert.NotNull(r);
-        Assert.Equal(["SET", ""], r);
+        AssertCmd(r, "SET", "");
     }
 
     [Fact]
@@ -97,11 +103,11 @@ public class RespReaderTests
     {
         using var ms = new MemoryStream();
         var writer = new RespWriter(ms);
-        string[] expected = ["SET", "key", "value"];
-        await writer.WriteArray(expected);
+        await writer.WriteArray(new[] { "SET", "key", "value" }.Select(s => new ReadOnlyMemory<byte>(Encoding.ASCII.GetBytes(s))).ToArray());
 
         ms.Position = 0;
         var result = await _reader.ReadCommand(ms);
-        Assert.Equal(expected, result);
+        AssertCmd(result, "SET", "key", "value");
     }
 }
+

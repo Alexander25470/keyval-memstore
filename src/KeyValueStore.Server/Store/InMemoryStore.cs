@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text;
 
 namespace KeyValueStore.Server.Store;
 
@@ -14,15 +15,15 @@ public class InMemoryStore
 
     // ---- write ----
 
-    public void Set(string key, string value, TimeSpan? ttl = null)
+    public void Set(string key, ReadOnlyMemory<byte> value, TimeSpan? ttl = null)
     {
         DateTime? expiresAt = ttl.HasValue ? DateTime.UtcNow + ttl.Value : null;
-        _store[key] = StoreEntry.FromString(value, expiresAt);
+        _store[key] = StoreEntry.FromString(value.ToArray(), expiresAt);
     }
 
     // ---- read ----
 
-    public string? Get(string key)
+    public byte[]? Get(string key)
     {
         if (!_store.TryGetValue(key, out var entry))
             return null;
@@ -31,7 +32,7 @@ public class InMemoryStore
             _store.TryRemove(key, out _);
             return null;
         }
-        return entry.Type == StoreType.String ? (string)entry.Value : null;
+        return entry.Type == StoreType.String ? (byte[])entry.Value : null;
     }
 
     // ---- type ----
@@ -154,133 +155,137 @@ public class InMemoryStore
     {
         var entry = _store.AddOrUpdate(
             key,
-            _ => StoreEntry.FromString(delta.ToString()),
+            _ => StoreEntry.FromString(ToBytes(delta)),
             (_, existing) =>
             {
                 if (existing.IsExpired)
-                    return StoreEntry.FromString(delta.ToString());
+                    return StoreEntry.FromString(ToBytes(delta));
                 if (existing.Type != StoreType.String)
                     throw new InvalidOperationException("value is not an integer or out of range");
-                var val = (string)existing.Value;
-                if (!long.TryParse(val, out var current))
+                var val = (byte[])existing.Value;
+                if (!TryParseLong(val, out var current))
                     throw new InvalidOperationException("value is not an integer or out of range");
-                return StoreEntry.FromString((current + delta).ToString(), existing.ExpiresAt);
+                return StoreEntry.FromString(ToBytes(current + delta), existing.ExpiresAt);
             });
-        return long.Parse((string)entry.Value);
+        return ParseLong((byte[])entry.Value);
     }
+
+    private static byte[] ToBytes(long value) => Encoding.ASCII.GetBytes(value.ToString());
+    private static bool TryParseLong(byte[] bytes, out long value) => long.TryParse(Encoding.ASCII.GetString(bytes), out value);
+    private static long ParseLong(byte[] bytes) => long.Parse(Encoding.ASCII.GetString(bytes));
 
     // ---- sets ----
 
-    public int SAdd(string key, params string[] members)
+    public int SAdd(string key, params ReadOnlyMemory<byte>[] members)
     {
         int added = 0;
         _store.AddOrUpdate(
             key,
             _ =>
             {
-                var s = new HashSet<string>(members);
-                added = s.Count;
+                var s = new HashSet<byte[]>(ByteArrayComparer.Instance);
+                foreach (var m in members) if (s.Add(m.ToArray())) added++;
                 return StoreEntry.FromSet(s);
             },
             (_, existing) =>
             {
-                if (existing.IsExpired) { var s = new HashSet<string>(members); added = s.Count; return StoreEntry.FromSet(s); }
+                if (existing.IsExpired) { var s = new HashSet<byte[]>(ByteArrayComparer.Instance); foreach (var m in members) if (s.Add(m.ToArray())) added++; return StoreEntry.FromSet(s); }
                 if (existing.Type != StoreType.Set) return existing;
-                var set = (HashSet<string>)existing.Value;
-                foreach (var m in members) if (set.Add(m)) added++;
+                var set = (HashSet<byte[]>)existing.Value;
+                foreach (var m in members) if (set.Add(m.ToArray())) added++;
                 return StoreEntry.FromSet(set, existing.ExpiresAt);
             });
         return added;
     }
 
-    public int SRem(string key, params string[] members)
+    public int SRem(string key, params ReadOnlyMemory<byte>[] members)
     {
         if (!_store.TryGetValue(key, out var entry) || entry.IsExpired || entry.Type != StoreType.Set)
             return 0;
-        var set = (HashSet<string>)entry.Value;
+        var set = (HashSet<byte[]>)entry.Value;
         int removed = 0;
-        foreach (var m in members) if (set.Remove(m)) removed++;
+        foreach (var m in members) if (set.Remove(m.ToArray())) removed++;
         return removed;
     }
 
-    public string[] SMembers(string key)
+    public byte[][] SMembers(string key)
     {
         if (!_store.TryGetValue(key, out var entry) || entry.IsExpired || entry.Type != StoreType.Set)
-            return Array.Empty<string>();
-        return ((HashSet<string>)entry.Value).ToArray();
+            return Array.Empty<byte[]>();
+        return ((HashSet<byte[]>)entry.Value).ToArray();
     }
 
-    public bool SIsMember(string key, string member)
+    public bool SIsMember(string key, ReadOnlyMemory<byte> member)
     {
         if (!_store.TryGetValue(key, out var entry) || entry.IsExpired || entry.Type != StoreType.Set)
             return false;
-        return ((HashSet<string>)entry.Value).Contains(member);
+        return ((HashSet<byte[]>)entry.Value).Contains(member.ToArray());
     }
 
     public int SCard(string key)
     {
         if (!_store.TryGetValue(key, out var entry) || entry.IsExpired || entry.Type != StoreType.Set)
             return 0;
-        return ((HashSet<string>)entry.Value).Count;
+        return ((HashSet<byte[]>)entry.Value).Count;
     }
 
     // ---- hashes ----
 
-    public int HSet(string key, string field, string value)
+    public int HSet(string key, ReadOnlyMemory<byte> field, ReadOnlyMemory<byte> value)
     {
         var entry = _store.AddOrUpdate(
             key,
-            _ => StoreEntry.FromHash(new Dictionary<string, string> { [field] = value }),
+            _ => StoreEntry.FromHash(new Dictionary<byte[], byte[]>(ByteArrayComparer.Instance) { [field.ToArray()] = value.ToArray() }),
             (_, existing) =>
             {
-                if (existing.IsExpired) return StoreEntry.FromHash(new Dictionary<string, string> { [field] = value });
+                if (existing.IsExpired) return StoreEntry.FromHash(new Dictionary<byte[], byte[]>(ByteArrayComparer.Instance) { [field.ToArray()] = value.ToArray() });
                 if (existing.Type != StoreType.Hash) return existing;
-                var hash = (Dictionary<string, string>)existing.Value;
-                hash[field] = value;
+                var hash = (Dictionary<byte[], byte[]>)existing.Value;
+                hash[field.ToArray()] = value.ToArray();
                 return StoreEntry.FromHash(hash, existing.ExpiresAt);
             });
         return entry.Type == StoreType.Hash ? 1 : 0;
     }
 
-    public string? HGet(string key, string field)
+    public byte[]? HGet(string key, ReadOnlyMemory<byte> field)
     {
         if (!_store.TryGetValue(key, out var entry) || entry.IsExpired || entry.Type != StoreType.Hash)
             return null;
-        return ((Dictionary<string, string>)entry.Value).TryGetValue(field, out var val) ? val : null;
+        return ((Dictionary<byte[], byte[]>)entry.Value).TryGetValue(field.ToArray(), out var val) ? val : null;
     }
 
-    public int HDel(string key, params string[] fields)
+    public int HDel(string key, params ReadOnlyMemory<byte>[] fields)
     {
         if (!_store.TryGetValue(key, out var entry) || entry.IsExpired || entry.Type != StoreType.Hash)
             return 0;
-        var hash = (Dictionary<string, string>)entry.Value;
+        var hash = (Dictionary<byte[], byte[]>)entry.Value;
         int removed = 0;
-        foreach (var f in fields) if (hash.Remove(f)) removed++;
+        foreach (var f in fields) if (hash.Remove(f.ToArray())) removed++;
         return removed;
     }
 
-    public string[] HGetAll(string key)
+    public byte[][] HGetAll(string key)
     {
         if (!_store.TryGetValue(key, out var entry) || entry.IsExpired || entry.Type != StoreType.Hash)
-            return Array.Empty<string>();
-        var hash = (Dictionary<string, string>)entry.Value;
-        var result = new List<string>();
+            return Array.Empty<byte[]>();
+        var hash = (Dictionary<byte[], byte[]>)entry.Value;
+        var result = new List<byte[]>();
         foreach (var kv in hash) { result.Add(kv.Key); result.Add(kv.Value); }
         return result.ToArray();
     }
 
-    public bool HExists(string key, string field)
+    public bool HExists(string key, ReadOnlyMemory<byte> field)
     {
         if (!_store.TryGetValue(key, out var entry) || entry.IsExpired || entry.Type != StoreType.Hash)
             return false;
-        return ((Dictionary<string, string>)entry.Value).ContainsKey(field);
+        return ((Dictionary<byte[], byte[]>)entry.Value).ContainsKey(field.ToArray());
     }
 
     public int HLen(string key)
     {
         if (!_store.TryGetValue(key, out var entry) || entry.IsExpired || entry.Type != StoreType.Hash)
             return 0;
-        return ((Dictionary<string, string>)entry.Value).Count;
+        return ((Dictionary<byte[], byte[]>)entry.Value).Count;
     }
 
     // ---- active expiration (Redis-style sampling) ----

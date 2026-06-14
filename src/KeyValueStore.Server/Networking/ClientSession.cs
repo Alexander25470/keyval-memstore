@@ -42,7 +42,7 @@ public class ClientSession
 
             while (!ct.IsCancellationRequested)
             {
-                string[]? args;
+                ReadOnlyMemory<byte>[]? args;
                 try { args = await _reader.ReadCommand(stream); }
                 catch (ProtocolException ex) { await _writer.WriteError(ex.Message); break; }
                 if (args is null) break;

@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text;
 using KeyValueStore.Server;
 using KeyValueStore.Server.Exceptions;
@@ -17,7 +18,10 @@ public class CommandDispatcherTests
         _dispatcher = new CommandDispatcher(_store, new PubSubHub());
     }
 
-    private async Task<string> Execute(string[] args)
+    private static ReadOnlyMemory<byte>[] ToArgs(string[] args) =>
+        args.Select(s => new ReadOnlyMemory<byte>(Encoding.ASCII.GetBytes(s))).ToArray();
+
+    private async Task<string> Execute(ReadOnlyMemory<byte>[] args)
     {
         using var ms = new MemoryStream();
         var writer = new RespWriter(ms);
@@ -28,7 +32,8 @@ public class CommandDispatcherTests
 
     private async Task<string> Exec(string commandLine)
     {
-        return await Execute(commandLine.Split(' '));
+        var args = commandLine.Split(' ').Select(s => new ReadOnlyMemory<byte>(Encoding.ASCII.GetBytes(s))).ToArray();
+        return await Execute(args);
     }
 
     // ---- PING ----
@@ -201,7 +206,7 @@ public class CommandDispatcherTests
         var writer = new RespWriter(ms);
         var ex = await Assert.ThrowsAsync<QuitException>(async () =>
         {
-            await _dispatcher.ExecuteAsync(["QUIT"], writer);
+            await _dispatcher.ExecuteAsync(new ReadOnlyMemory<byte>[] { Encoding.ASCII.GetBytes("QUIT") }, writer);
         });
         ms.Position = 0;
         Assert.Equal("+OK\r\n", Encoding.UTF8.GetString(ms.ToArray()));
@@ -233,7 +238,8 @@ public class CommandDispatcherWithReplicationTests
     {
         using var ms = new MemoryStream();
         var writer = new RespWriter(ms);
-        await _dispatcher.ExecuteAsync(commandLine.Split(' '), writer);
+        var args = commandLine.Split(' ').Select(s => new ReadOnlyMemory<byte>(Encoding.ASCII.GetBytes(s))).ToArray();
+        await _dispatcher.ExecuteAsync(args, writer);
         ms.Position = 0;
         return Encoding.UTF8.GetString(ms.ToArray());
     }

@@ -66,14 +66,15 @@ public class PubSubHub
 
     // ---- publish ----
 
-    public int Publish(string channel, string message)
+    public int Publish(string channel, ReadOnlyMemory<byte> message)
     {
         int count = 0;
+        var data = message.ToArray();
 
         // Deliver to exact-channel subscribers.
         if (_channels.TryGetValue(channel, out var subs))
         {
-            var msg = new PubSubMessage("message", channel, null, message);
+            var msg = new PubSubMessage("message", channel, null, data);
             foreach (var kv in subs)
             {
                 if (kv.Value.TryPush(msg))
@@ -86,7 +87,7 @@ public class PubSubHub
         {
             if (Glob.Match(channel, kv.Value.Pattern))
             {
-                var pm = new PubSubMessage("pmessage", channel, kv.Value.Pattern, message);
+                var pm = new PubSubMessage("pmessage", channel, kv.Value.Pattern, data);
                 if (kv.Value.Session.TryPush(pm))
                     count++;
             }
