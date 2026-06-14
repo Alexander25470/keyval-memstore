@@ -73,9 +73,10 @@ public class ClientSession
     {
         try
         {
+            var socketTask = _reader.ReadCommand(stream).AsTask();
+
             while (true)
             {
-                var socketTask = _reader.ReadCommand(stream).AsTask();
                 var inboxTask = _inbox.Reader.WaitToReadAsync().AsTask();
                 var done = await Task.WhenAny(socketTask, inboxTask);
 
@@ -90,6 +91,9 @@ public class ClientSession
 
                     if (_pendingMode == SubscriptionMode.None)
                         break;
+
+                    // Only start a new read after consuming the previous result.
+                    socketTask = _reader.ReadCommand(stream).AsTask();
                 }
                 else
                 {

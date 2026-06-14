@@ -108,5 +108,26 @@ echo -e "SET foo bar\r\nGET foo\r\n" | nc 127.0.0.1 6379  # +OK, $3, bar
 
 ```bash
 dotnet test
-# 162 tests, 0 fallados
+# 206 tests, 0 fallados
+```
+
+## Publicar
+
+```bash
+dotnet publish src/KeyValueStore.Server -c Release -o ./publish
+```
+
+El ejecutable queda en `./publish/KeyValueStore.Server`.
+
+### Ejecutar la versión publicada
+
+```bash
+# Windows
+set KV_HOST=0.0.0.0 & set KV_PORT=6380 & .\publish\KeyValueStore.Server.exe
+
+# Linux / macOS
+KV_HOST=0.0.0.0 KV_PORT=6380 ./publish/KeyValueStore.Server
+
+# O con argumentos CLI (tienen precedencia sobre las variables)
+./publish/KeyValueStore.Server --host 0.0.0.0 --port 6380
 ```

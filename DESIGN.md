@@ -117,7 +117,9 @@ Al validar el servidor contra el cliente .NET más popular (`StackExchange.Redis
 
 **Encoding y binary-safety.** SE.Redis valida la conexión con un `ECHO` que contiene bytes aleatorios binarios (tracer). El `RespReader` usaba `UTF8.GetString` para decodificar bulk strings, y `RespWriter` usaba `UTF8.GetBytes` para codificarlas. El round-trip `bytes → UTF-8 string → UTF-8 bytes` corrompe datos no-UTF8 (caracteres de reemplazo U+FFFD). Se migró todo el pipeline de datos a `ReadOnlyMemory<byte>`/`byte[]` — no hay ningún encoding intermedio, igual que Redis real en C.
 
-**Conexiones de suscripción.** SE.Redis abre conexiones separadas para pub/sub y suscribe al canal interno `__Booksleeve_MasterChanged`. Nuestro `SUBSCRIBE` requiere una sesión activa, por lo que esta suscripción falla, pero SE.Redis continúa operando correctamente por la conexión interactiva. **Pendiente**: crear sesión automáticamente al recibir `SUBSCRIBE`/`PSUBSCRIBE` sin sesión previa.
+**Conexiones de suscripción.** SE.Redis abre conexiones separadas para pub/sub y suscribe al canal interno `__Booksleeve_MasterChanged`. El servidor maneja correctamente estas suscripciones — cada conexión TCP recibe un `ClientSession` automáticamente. El canal existe para escuchar failovers vía Redis Sentinel, funcionalidad que requiere soporte multi-instancia (ver sección 7).
+
+**Soporte multi-instancia (principal tradeoff pendiente).** SE.Redis espera ciertos comandos de clustering que el servidor aún no soporta (`CLUSTER NODES`, `CONFIG GET`, `INFO`, `SENTINEL MASTERS`). Estos comandos devuelven error y SE.Redis los tolera, pero para un failover real se necesitaría implementar replicación maestro-réplica y el protocolo Sentinel. Hacerlo implicaría: sincronización de estado entre nodos, elección de líder, redirección de escrituras, y publicación en `__Booksleeve_MasterChanged` ante cambios de topología.
 
 ---
 
@@ -201,7 +203,6 @@ KvServer (1 Task)
 
 ## 7. Mejoras a futuro
 
-| Mejora | Descripción |
-|---|---|
+| Moporte multi-instancia | Replicación maestro-réplica, failover automático con Sentinel, y publicación en `__Booksleeve_MasterChanged`. Necesario para que SE.Redis opere en modo alta disponibilidad.
 | Suscripción sin sesión previa | SE.Redis envía `SUBSCRIBE` en conexiones frescas sin `ClientSession`. Crear sesión automáticamente al recibir `SUBSCRIBE`/`PSUBSCRIBE` sin sesión activa. |
 | Soporte multi-instancia | Replicación y alta disponibilidad con múltiples nodos |

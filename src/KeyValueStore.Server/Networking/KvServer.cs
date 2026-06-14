@@ -19,8 +19,21 @@ public class KvServer
     {
         _dispatcher = dispatcher;
         _hub = hub;
-        _host = IPAddress.Parse(host);
+        _host = ResolveHost(host);
         _port = port;
+    }
+
+    private static IPAddress ResolveHost(string host)
+    {
+        host = host.Trim();
+        return host switch
+        {
+            "" or "*" or "+" or "0.0.0.0" => IPAddress.Any,
+            "::" or "[::]" or "::0" => IPAddress.IPv6Any,
+            "localhost" => IPAddress.Loopback,
+            "127.0.0.1" => IPAddress.Loopback,
+            _ => IPAddress.Parse(host)
+        };
     }
 
     public async Task RunAsync(CancellationToken ct)
