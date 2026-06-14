@@ -233,6 +233,19 @@ public class InMemoryStoreTests
         Assert.Equal(1, _store.Incr("temp"));
     }
 
+    // ---- keys (expired) ----
+
+    [Fact]
+    public void Keys_ExpiredKey_Excluded()
+    {
+        _store.Set("keep", "val");
+        _store.Set("exp", "val", TimeSpan.FromMilliseconds(50));
+        Thread.Sleep(100);
+        var keys = _store.Keys("*");
+        Assert.DoesNotContain("exp", keys);
+        Assert.Contains("keep", keys);
+    }
+
     // ---- concurrent writes ----
 
     [Fact]

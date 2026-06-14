@@ -1,0 +1,11 @@
+{
+  "profiles": {
+    "default": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "KV_HOST": "127.0.0.1",
+        "KV_PORT": "6371"
+      }
+    }
+  }
+}

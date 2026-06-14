@@ -1,7 +1,7 @@
 ﻿using KeyValueStore.Server;
 
-var host = "127.0.0.1";
-var port = 6379;
+var host = Environment.GetEnvironmentVariable("KV_HOST") ?? "127.0.0.1";
+var port = int.TryParse(Environment.GetEnvironmentVariable("KV_PORT"), out var envPort) ? envPort : 6379;
 
 for (int i = 0; i < args.Length; i++)
 {

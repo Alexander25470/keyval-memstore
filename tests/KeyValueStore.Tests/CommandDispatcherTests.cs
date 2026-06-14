@@ -52,6 +52,15 @@ public class CommandDispatcherTests
         await Exec("SET k v EX 3600");
         Assert.True(_store.Ttl("k") > 0);
     }
+    [Fact] public async Task Set_ExMissingValue_ReturnsError() => Assert.StartsWith("-ERR", await Exec("SET k v EX"));
+    [Fact] public async Task Set_PxMissingValue_ReturnsError() => Assert.StartsWith("-ERR", await Exec("SET k v PX"));
+    [Fact] public async Task Set_InvalidOption_ReturnsError() => Assert.StartsWith("-ERR", await Exec("SET k v BAD"));
+    [Fact] public async Task Set_WithPx_SetsTTL()
+    {
+        await Exec("SET k v PX 5000");
+        // TTL should be ~5s (PX is milliseconds)
+        Assert.True(_store.Ttl("k") > 0);
+    }
 
     // ---- DEL ----
 
@@ -108,6 +117,8 @@ public class CommandDispatcherTests
         Assert.Equal(":1\r\n", await Exec("EXPIRE k 100"));
     }
     [Fact] public async Task Expire_Missing_ReturnsZero() => Assert.Equal(":0\r\n", await Exec("EXPIRE x 10"));
+    [Fact] public async Task Expire_NegativeSeconds_ReturnsError() => Assert.StartsWith("-ERR", await Exec("EXPIRE k -1"));
+    [Fact] public async Task Expire_NonInteger_ReturnsError() => Assert.StartsWith("-ERR", await Exec("EXPIRE k abc"));
     [Fact]
     public async Task Ttl_NoExpiry_ReturnsMinusOne()
     {
@@ -138,6 +149,11 @@ public class CommandDispatcherTests
         Assert.Equal(":6\r\n", await Exec("INCR c"));
     }
     [Fact] public async Task Decr_New_ReturnsMinusOne() => Assert.Equal(":-1\r\n", await Exec("DECR c"));
+    [Fact] public async Task Decr_NonInteger_ReturnsError()
+    {
+        await Exec("SET k hello");
+        Assert.StartsWith("-ERR", await Exec("DECR k"));
+    }
     [Fact]
     public async Task Incr_NonInteger_ReturnsError()
     {
@@ -186,4 +202,43 @@ public class CommandDispatcherTests
         ms.Position = 0;
         Assert.Equal("+OK\r\n", Encoding.UTF8.GetString(ms.ToArray()));
     }
+}
+
+// ---- replication spy ----
+
+internal sealed class ReplicationSpy : IReplicationCoordinator
+{
+    public List<(string Command, string Key, string Value, TimeSpan? Ttl)> Calls { get; } = [];
+
+    public void OnWrite(string command, string key, string value, TimeSpan? ttl)
+        => Calls.Add((command, key, value, ttl));
+}
+
+public class CommandDispatcherWithReplicationTests
+{
+    private readonly InMemoryStore _store = new();
+    private readonly ReplicationSpy _spy = new();
+    private readonly CommandDispatcher _dispatcher;
+
+    public CommandDispatcherWithReplicationTests()
+    {
+        _dispatcher = new CommandDispatcher(_store, _spy);
+    }
+
+    private async Task<string> Exec(string commandLine)
+    {
+        using var ms = new MemoryStream();
+        var writer = new RespWriter(ms);
+        await _dispatcher.ExecuteAsync(commandLine.Split(' '), writer);
+        ms.Position = 0;
+        return Encoding.UTF8.GetString(ms.ToArray());
+    }
+
+    [Fact] public async Task Replication_Set_Notifies() { await Exec("SET foo bar"); Assert.Single(_spy.Calls); Assert.Equal("SET", _spy.Calls[0].Command); }
+    [Fact] public async Task Replication_Incr_Notifies() { await Exec("INCR c"); Assert.Single(_spy.Calls); Assert.Equal("INCR", _spy.Calls[0].Command); }
+    [Fact] public async Task Replication_Decr_Notifies() { await Exec("DECR c"); Assert.Single(_spy.Calls); Assert.Equal("DECR", _spy.Calls[0].Command); }
+    [Fact] public async Task Replication_DecrNonInt_DoesNotNotify() { await Exec("SET k hello"); _spy.Calls.Clear(); await Exec("DECR k"); Assert.Empty(_spy.Calls); }
+    [Fact] public async Task Replication_Del_Notifies() { await Exec("SET k v"); _spy.Calls.Clear(); await Exec("DEL k"); Assert.Single(_spy.Calls); Assert.Equal("DEL", _spy.Calls[0].Command); }
+    [Fact] public async Task Replication_FlushAll_Notifies() { await Exec("FLUSHALL"); Assert.Single(_spy.Calls); Assert.Equal("FLUSHALL", _spy.Calls[0].Command); }
+    [Fact] public async Task Replication_Expire_Notifies() { await Exec("SET k v"); _spy.Calls.Clear(); await Exec("EXPIRE k 100"); Assert.Single(_spy.Calls); Assert.Equal("EXPIRE", _spy.Calls[0].Command); }
 }
