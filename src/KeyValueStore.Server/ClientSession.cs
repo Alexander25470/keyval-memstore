@@ -9,15 +9,13 @@ namespace KeyValueStore.Server;
 public class ClientSession
 {
     private readonly TcpClient _client;
-    private readonly InMemoryStore _store;
     private readonly CommandDispatcher _dispatcher;
     private readonly RespReader _reader = new();
     private RespWriter? _writer;
 
-    public ClientSession(TcpClient client, InMemoryStore store, CommandDispatcher dispatcher)
+    public ClientSession(TcpClient client, CommandDispatcher dispatcher)
     {
         _client = client;
-        _store = store;
         _dispatcher = dispatcher;
     }
 

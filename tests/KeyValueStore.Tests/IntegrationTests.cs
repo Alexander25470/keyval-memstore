@@ -20,7 +20,7 @@ public class IntegrationTests : IAsyncDisposable
         _port = GetRandomPort();
         var store = new InMemoryStore();
         var dispatcher = new CommandDispatcher(store);
-        var server = new KvServer(store, dispatcher, "127.0.0.1", _port);
+        var server = new KvServer(dispatcher, "127.0.0.1", _port);
         _ = store.RunExpirationLoop(_cts.Token);
         _serverTask = server.RunAsync(_cts.Token);
     }

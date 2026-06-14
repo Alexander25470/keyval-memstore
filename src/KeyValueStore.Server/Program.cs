@@ -18,7 +18,7 @@ Console.CancelKeyPress += (_, e) =>
 
 var store = new InMemoryStore();
 var dispatcher = new CommandDispatcher(store);
-var server = new KvServer(store, dispatcher, host, port);
+var server = new KvServer(dispatcher, host, port);
 
 _ = store.RunExpirationLoop(cts.Token);
 

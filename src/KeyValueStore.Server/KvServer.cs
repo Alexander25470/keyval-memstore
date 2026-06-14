@@ -9,14 +9,12 @@ namespace KeyValueStore.Server;
 /// </summary>
 public class KvServer
 {
-    private readonly InMemoryStore _store;
     private readonly CommandDispatcher _dispatcher;
     private readonly IPAddress _host;
     private readonly int _port;
 
-    public KvServer(InMemoryStore store, CommandDispatcher dispatcher, string host, int port)
+    public KvServer(CommandDispatcher dispatcher, string host, int port)
     {
-        _store = store;
         _dispatcher = dispatcher;
         _host = IPAddress.Parse(host);
         _port = port;
@@ -34,7 +32,7 @@ public class KvServer
             while (!ct.IsCancellationRequested)
             {
                 var client = await listener.AcceptTcpClientAsync(ct);
-                var session = new ClientSession(client, _store, _dispatcher);
+                var session = new ClientSession(client, _dispatcher);
                 _ = session.RunAsync(ct); // fire-and-forget
             }
         }
