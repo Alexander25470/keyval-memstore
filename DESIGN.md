@@ -140,7 +140,7 @@ KvServer (1 Task)
 | `InMemoryStoreTests` | 52 | Operaciones del store, TTL, concurrencia, sets, hashes |
 | `RespReaderTests` | 12 | Parseo de arrays RESP, comandos inline, edge cases |
 | `RespWriterTests` | 17 | Todos los tipos RESP, null/empty, round-trip |
-| `CommandDispatcherTests` | 42 | Los 27 comandos, errores de aridad, comando desconocido |
+| `CommandDispatcherTests` | 42 | Los 26 comandos, errores por cantidad incorrecta de argumentos, comandos desconocidos |
 | `IntegrationTests` | 18 | TCP real con `RespWriter`/`RespReader` en ambos extremos |
 | **Total** | **143** | **0 fallados, ~1.6s** |
 
