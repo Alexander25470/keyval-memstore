@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 using System.Text;
 
 namespace KeyValueStore.Server.Store;
@@ -14,25 +15,27 @@ public class InMemoryStore
     private readonly ConcurrentDictionary<byte[], StoreEntry> _store = new(ByteArrayComparer.Instance);
     private static readonly Random _rng = new();
 
-    private static byte[] K(ReadOnlyMemory<byte> key) => key.ToArray();
+    /// <summary>Converts a <see cref="ReadOnlyMemory{T}"/> slice into an owned <c>byte[]</c> suitable as a dictionary key.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static byte[] ToKey(ReadOnlyMemory<byte> slice) => slice.ToArray();
 
     // ---- write ----
 
     public void Set(ReadOnlyMemory<byte> key, ReadOnlyMemory<byte> value, TimeSpan? ttl = null)
     {
         DateTime? expiresAt = ttl.HasValue ? DateTime.UtcNow + ttl.Value : null;
-        _store[K(key)] = StoreEntry.FromString(value.ToArray(), expiresAt);
+        _store[ToKey(key)] = StoreEntry.FromString(value.ToArray(), expiresAt);
     }
 
     // ---- read ----
 
     public byte[]? Get(ReadOnlyMemory<byte> key)
     {
-        if (!_store.TryGetValue(K(key), out var entry))
+        if (!_store.TryGetValue(ToKey(key), out var entry))
             return null;
         if (entry.IsExpired)
         {
-            _store.TryRemove(K(key), out _);
+            _store.TryRemove(ToKey(key), out _);
             return null;
         }
         return entry.Type == StoreType.String ? (byte[])entry.Value : null;
@@ -42,7 +45,7 @@ public class InMemoryStore
 
     public string Type(ReadOnlyMemory<byte> key)
     {
-        if (!_store.TryGetValue(K(key), out var entry) || entry.IsExpired)
+        if (!_store.TryGetValue(ToKey(key), out var entry) || entry.IsExpired)
             return "none";
         return entry.Type switch
         {
@@ -60,7 +63,7 @@ public class InMemoryStore
         int count = 0;
         foreach (var key in keys)
         {
-            var kb = K(key);
+            var kb = ToKey(key);
             if (_store.TryGetValue(kb, out var entry) && !entry.IsExpired)
             {
                 _store.TryRemove(kb, out _);
@@ -77,7 +80,7 @@ public class InMemoryStore
         int count = 0;
         foreach (var key in keys)
         {
-            if (_store.TryGetValue(K(key), out var entry) && !entry.IsExpired)
+            if (_store.TryGetValue(ToKey(key), out var entry) && !entry.IsExpired)
                 count++;
         }
         return count;
@@ -122,7 +125,7 @@ public class InMemoryStore
 
     public bool Expire(ReadOnlyMemory<byte> key, int seconds)
     {
-        var kb = K(key);
+        var kb = ToKey(key);
         if (!_store.TryGetValue(kb, out var entry) || entry.IsExpired)
             return false;
         _store[kb] = entry.WithExpiry(DateTime.UtcNow.AddSeconds(seconds));
@@ -131,11 +134,11 @@ public class InMemoryStore
 
     public long Ttl(ReadOnlyMemory<byte> key)
     {
-        if (!_store.TryGetValue(K(key), out var entry))
+        if (!_store.TryGetValue(ToKey(key), out var entry))
             return -2;
         if (entry.IsExpired)
         {
-            _store.TryRemove(K(key), out _);
+            _store.TryRemove(ToKey(key), out _);
             return -2;
         }
         if (entry.ExpiresAt is null)
@@ -150,7 +153,7 @@ public class InMemoryStore
 
     private long AtomicIncrement(ReadOnlyMemory<byte> key, long delta)
     {
-        var kb = K(key);
+        var kb = ToKey(key);
         var entry = _store.AddOrUpdate(
             kb,
             _ => StoreEntry.FromString(ToBytes(delta)),
@@ -178,7 +181,7 @@ public class InMemoryStore
     {
         int added = 0;
         _store.AddOrUpdate(
-            K(key),
+            ToKey(key),
             _ =>
             {
                 var s = new HashSet<byte[]>(ByteArrayComparer.Instance);
@@ -198,7 +201,7 @@ public class InMemoryStore
 
     public int SRem(ReadOnlyMemory<byte> key, params ReadOnlyMemory<byte>[] members)
     {
-        if (!_store.TryGetValue(K(key), out var entry) || entry.IsExpired || entry.Type != StoreType.Set)
+        if (!_store.TryGetValue(ToKey(key), out var entry) || entry.IsExpired || entry.Type != StoreType.Set)
             return 0;
         var set = (HashSet<byte[]>)entry.Value;
         int removed = 0;
@@ -208,21 +211,21 @@ public class InMemoryStore
 
     public byte[][] SMembers(ReadOnlyMemory<byte> key)
     {
-        if (!_store.TryGetValue(K(key), out var entry) || entry.IsExpired || entry.Type != StoreType.Set)
+        if (!_store.TryGetValue(ToKey(key), out var entry) || entry.IsExpired || entry.Type != StoreType.Set)
             return Array.Empty<byte[]>();
         return ((HashSet<byte[]>)entry.Value).ToArray();
     }
 
     public bool SIsMember(ReadOnlyMemory<byte> key, ReadOnlyMemory<byte> member)
     {
-        if (!_store.TryGetValue(K(key), out var entry) || entry.IsExpired || entry.Type != StoreType.Set)
+        if (!_store.TryGetValue(ToKey(key), out var entry) || entry.IsExpired || entry.Type != StoreType.Set)
             return false;
         return ((HashSet<byte[]>)entry.Value).Contains(member.ToArray());
     }
 
     public int SCard(ReadOnlyMemory<byte> key)
     {
-        if (!_store.TryGetValue(K(key), out var entry) || entry.IsExpired || entry.Type != StoreType.Set)
+        if (!_store.TryGetValue(ToKey(key), out var entry) || entry.IsExpired || entry.Type != StoreType.Set)
             return 0;
         return ((HashSet<byte[]>)entry.Value).Count;
     }
@@ -232,7 +235,7 @@ public class InMemoryStore
     public int HSet(ReadOnlyMemory<byte> key, ReadOnlyMemory<byte> field, ReadOnlyMemory<byte> value)
     {
         var entry = _store.AddOrUpdate(
-            K(key),
+            ToKey(key),
             _ => StoreEntry.FromHash(new Dictionary<byte[], byte[]>(ByteArrayComparer.Instance) { [field.ToArray()] = value.ToArray() }),
             (_, existing) =>
             {
@@ -247,14 +250,14 @@ public class InMemoryStore
 
     public byte[]? HGet(ReadOnlyMemory<byte> key, ReadOnlyMemory<byte> field)
     {
-        if (!_store.TryGetValue(K(key), out var entry) || entry.IsExpired || entry.Type != StoreType.Hash)
+        if (!_store.TryGetValue(ToKey(key), out var entry) || entry.IsExpired || entry.Type != StoreType.Hash)
             return null;
         return ((Dictionary<byte[], byte[]>)entry.Value).TryGetValue(field.ToArray(), out var val) ? val : null;
     }
 
     public int HDel(ReadOnlyMemory<byte> key, params ReadOnlyMemory<byte>[] fields)
     {
-        if (!_store.TryGetValue(K(key), out var entry) || entry.IsExpired || entry.Type != StoreType.Hash)
+        if (!_store.TryGetValue(ToKey(key), out var entry) || entry.IsExpired || entry.Type != StoreType.Hash)
             return 0;
         var hash = (Dictionary<byte[], byte[]>)entry.Value;
         int removed = 0;
@@ -264,7 +267,7 @@ public class InMemoryStore
 
     public byte[][] HGetAll(ReadOnlyMemory<byte> key)
     {
-        if (!_store.TryGetValue(K(key), out var entry) || entry.IsExpired || entry.Type != StoreType.Hash)
+        if (!_store.TryGetValue(ToKey(key), out var entry) || entry.IsExpired || entry.Type != StoreType.Hash)
             return Array.Empty<byte[]>();
         var hash = (Dictionary<byte[], byte[]>)entry.Value;
         var result = new List<byte[]>();
@@ -274,14 +277,14 @@ public class InMemoryStore
 
     public bool HExists(ReadOnlyMemory<byte> key, ReadOnlyMemory<byte> field)
     {
-        if (!_store.TryGetValue(K(key), out var entry) || entry.IsExpired || entry.Type != StoreType.Hash)
+        if (!_store.TryGetValue(ToKey(key), out var entry) || entry.IsExpired || entry.Type != StoreType.Hash)
             return false;
         return ((Dictionary<byte[], byte[]>)entry.Value).ContainsKey(field.ToArray());
     }
 
     public int HLen(ReadOnlyMemory<byte> key)
     {
-        if (!_store.TryGetValue(K(key), out var entry) || entry.IsExpired || entry.Type != StoreType.Hash)
+        if (!_store.TryGetValue(ToKey(key), out var entry) || entry.IsExpired || entry.Type != StoreType.Hash)
             return 0;
         return ((Dictionary<byte[], byte[]>)entry.Value).Count;
     }
