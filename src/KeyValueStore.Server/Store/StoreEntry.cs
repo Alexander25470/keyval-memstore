@@ -1,4 +1,4 @@
-namespace KeyValueStore.Server;
+namespace KeyValueStore.Server.Store;
 
 internal enum StoreType { String, Set, Hash }
 

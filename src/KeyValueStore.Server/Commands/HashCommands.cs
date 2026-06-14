@@ -1,6 +1,8 @@
-namespace KeyValueStore.Server;
+namespace KeyValueStore.Server.Commands;
 
 using System.Linq;
+using KeyValueStore.Server.Resp;
+using KeyValueStore.Server.Store;
 
 public static class HashCommands
 {

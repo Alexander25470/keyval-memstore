@@ -1,8 +1,9 @@
 using System.Buffers;
 using System.Net.Sockets;
 using System.Text;
+using KeyValueStore.Server.PubSub;
 
-namespace KeyValueStore.Server;
+namespace KeyValueStore.Server.Resp;
 
 /// <summary>
 /// Writes RESP2 responses directly to a <see cref="Stream"/> using an
@@ -152,6 +153,51 @@ public class RespWriter : IDisposable
         int d = 0;
         while (value > 0) { d++; value /= 10; }
         return d;
+    }
+
+    // ---- pub/sub push messages ----
+
+    /// <summary>Write a push notification (array of bulk strings).</summary>
+    public ValueTask WritePush(PubSubMessage msg)
+    {
+        _buf.Clear();
+        // message → *3, pmessage → *4
+        int count = msg.Pattern is null ? 3 : 4;
+        WriteByte((byte)'*');
+        WriteInt64(count);
+        WriteBytes(CRLF);
+
+        WriteBulkStringInline(msg.Type);
+        WriteBulkStringInline(msg.Channel);
+        if (msg.Pattern is not null)
+            WriteBulkStringInline(msg.Pattern);
+        WriteBulkStringInline(msg.Data);
+
+        return FlushAsync();
+    }
+
+    /// <summary>Write a subscription confirmation e.g. *3\r\n$9\r\nsubscribe\r\n$5\r\nfoo\r\n:1\r\n</summary>
+    public ValueTask WriteSubscribeAck(string type, string channel, int count)
+    {
+        _buf.Clear();
+        WriteByte((byte)'*');
+        WriteInt64(3);
+        WriteBytes(CRLF);
+        WriteBulkStringInline(type);
+        WriteBulkStringInline(channel);
+        WriteByte((byte)':');
+        WriteInt64(count);
+        WriteBytes(CRLF);
+        return FlushAsync();
+    }
+
+    private void WriteBulkStringInline(string value)
+    {
+        WriteByte((byte)'$');
+        WriteInt64(value.Length);
+        WriteBytes(CRLF);
+        WriteUtf8(value);
+        WriteBytes(CRLF);
     }
 
     public void Dispose() { }

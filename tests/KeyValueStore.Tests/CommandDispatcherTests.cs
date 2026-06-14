@@ -1,5 +1,9 @@
 using System.Text;
 using KeyValueStore.Server;
+using KeyValueStore.Server.Exceptions;
+using KeyValueStore.Server.PubSub;
+using KeyValueStore.Server.Resp;
+using KeyValueStore.Server.Store;
 
 namespace KeyValueStore.Tests;
 
@@ -10,7 +14,7 @@ public class CommandDispatcherTests
 
     public CommandDispatcherTests()
     {
-        _dispatcher = new CommandDispatcher(_store);
+        _dispatcher = new CommandDispatcher(_store, new PubSubHub());
     }
 
     private async Task<string> Execute(string[] args)
@@ -222,7 +226,7 @@ public class CommandDispatcherWithReplicationTests
 
     public CommandDispatcherWithReplicationTests()
     {
-        _dispatcher = new CommandDispatcher(_store, _spy);
+        _dispatcher = new CommandDispatcher(_store, new PubSubHub(), _spy);
     }
 
     private async Task<string> Exec(string commandLine)

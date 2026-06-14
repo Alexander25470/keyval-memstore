@@ -1,8 +1,9 @@
 using System.Buffers;
 using System.Net.Sockets;
 using System.Text;
+using KeyValueStore.Server.Exceptions;
 
-namespace KeyValueStore.Server;
+namespace KeyValueStore.Server.Resp;
 
 /// <summary>
 /// Parses RESP2 commands from a <see cref="NetworkStream"/>.
@@ -208,12 +209,4 @@ public class RespReader : IDisposable
         if (_buffer is not null)
             ArrayPool<byte>.Shared.Return(_buffer);
     }
-}
-
-/// <summary>
-/// Thrown when the RESP input stream is malformed.
-/// </summary>
-public class ProtocolException : Exception
-{
-    public ProtocolException(string message) : base(message) { }
 }

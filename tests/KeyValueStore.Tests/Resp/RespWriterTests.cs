@@ -1,5 +1,7 @@
 using System.Text;
 using KeyValueStore.Server;
+using KeyValueStore.Server.PubSub;
+using KeyValueStore.Server.Resp;
 
 namespace KeyValueStore.Tests;
 
@@ -73,5 +75,45 @@ public class RespWriterTests
         await _writer.WriteOk(); Assert.Equal("+OK\r\n", await ReadResponse());
         await _writer.WriteInteger(99); Assert.Equal(":99\r\n", await ReadResponse());
         await _writer.WriteBulkString("x"); Assert.Equal("$1\r\nx\r\n", await ReadResponse());
+    }
+
+    // ---- pub/sub push messages ----
+
+    [Fact]
+    public async Task WritePush_Message()
+    {
+        var msg = new PubSubMessage("message", "orders", null, "new!");
+        await _writer.WritePush(msg);
+        Assert.Equal("*3\r\n$7\r\nmessage\r\n$6\r\norders\r\n$4\r\nnew!\r\n", await ReadResponse());
+    }
+
+    [Fact]
+    public async Task WritePush_PMessage()
+    {
+        var msg = new PubSubMessage("pmessage", "orders.123", "orders.*", "data");
+        await _writer.WritePush(msg);
+        Assert.Equal("*4\r\n$8\r\npmessage\r\n$10\r\norders.123\r\n$8\r\norders.*\r\n$4\r\ndata\r\n", await ReadResponse());
+    }
+
+    [Fact]
+    public async Task WritePush_EmptyData()
+    {
+        var msg = new PubSubMessage("message", "ch", null, "");
+        await _writer.WritePush(msg);
+        Assert.Equal("*3\r\n$7\r\nmessage\r\n$2\r\nch\r\n$0\r\n\r\n", await ReadResponse());
+    }
+
+    [Fact]
+    public async Task WriteSubscribeAck()
+    {
+        await _writer.WriteSubscribeAck("subscribe", "orders", 2);
+        Assert.Equal("*3\r\n$9\r\nsubscribe\r\n$6\r\norders\r\n:2\r\n", await ReadResponse());
+    }
+
+    [Fact]
+    public async Task WriteSubscribeAck_Psubscribe()
+    {
+        await _writer.WriteSubscribeAck("psubscribe", "orders.*", 1);
+        Assert.Equal("*3\r\n$10\r\npsubscribe\r\n$8\r\norders.*\r\n:1\r\n", await ReadResponse());
     }
 }

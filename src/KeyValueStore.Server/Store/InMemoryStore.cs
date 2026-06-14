@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace KeyValueStore.Server;
+namespace KeyValueStore.Server.Store;
 
 /// <summary>
 /// In-memory key-value store backed by a <see cref="ConcurrentDictionary{TKey,TValue}"/>.
@@ -91,7 +91,7 @@ public class InMemoryStore
                 _store.TryRemove(kv.Key, out _);
                 continue;
             }
-            if (GlobMatch(kv.Key, pattern))
+            if (Glob.Match(kv.Key, pattern))
                 matches.Add(kv.Key);
         }
         return matches;
@@ -314,43 +314,5 @@ public class InMemoryStore
             if (expired < sampleSize / 4)
                 await Task.Delay(100, ct);
         }
-    }
-
-    // ---- glob matching (simple: * and ? only) ----
-
-    private static bool GlobMatch(string input, string pattern)
-    {
-        int i = 0, p = 0;
-        int starIdx = -1, matchIdx = 0;
-
-        while (i < input.Length)
-        {
-            if (p < pattern.Length && pattern[p] == '*')
-            {
-                starIdx = p;
-                matchIdx = i;
-                p++;
-            }
-            else if (p < pattern.Length && (pattern[p] == '?' || pattern[p] == input[i]))
-            {
-                i++;
-                p++;
-            }
-            else if (starIdx != -1)
-            {
-                p = starIdx + 1;
-                matchIdx++;
-                i = matchIdx;
-            }
-            else
-            {
-                return false;
-            }
-        }
-
-        while (p < pattern.Length && pattern[p] == '*')
-            p++;
-
-        return p == pattern.Length;
     }
 }

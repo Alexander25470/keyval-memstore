@@ -1,4 +1,5 @@
 using KeyValueStore.Server;
+using KeyValueStore.Server.Store;
 
 namespace KeyValueStore.Tests;
 

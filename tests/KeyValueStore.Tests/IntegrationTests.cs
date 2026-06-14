@@ -1,6 +1,10 @@
 using System.Net;
 using System.Net.Sockets;
 using KeyValueStore.Server;
+using KeyValueStore.Server.Networking;
+using KeyValueStore.Server.PubSub;
+using KeyValueStore.Server.Resp;
+using KeyValueStore.Server.Store;
 
 namespace KeyValueStore.Tests;
 
@@ -19,8 +23,9 @@ public class IntegrationTests : IAsyncDisposable
     {
         _port = GetRandomPort();
         var store = new InMemoryStore();
-        var dispatcher = new CommandDispatcher(store);
-        var server = new KvServer(dispatcher, "127.0.0.1", _port);
+        var hub = new PubSubHub();
+        var dispatcher = new CommandDispatcher(store, hub);
+        var server = new KvServer(dispatcher, hub, "127.0.0.1", _port);
         _ = store.RunExpirationLoop(_cts.Token);
         _serverTask = server.RunAsync(_cts.Token);
     }

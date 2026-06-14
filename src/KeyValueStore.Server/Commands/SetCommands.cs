@@ -1,4 +1,7 @@
-namespace KeyValueStore.Server;
+using KeyValueStore.Server.Resp;
+using KeyValueStore.Server.Store;
+
+namespace KeyValueStore.Server.Commands;
 
 public static class SetCommands
 {

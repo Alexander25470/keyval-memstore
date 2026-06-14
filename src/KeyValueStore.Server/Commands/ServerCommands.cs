@@ -1,4 +1,7 @@
-namespace KeyValueStore.Server;
+using KeyValueStore.Server.Exceptions;
+using KeyValueStore.Server.Resp;
+
+namespace KeyValueStore.Server.Commands;
 
 public static class ServerCommands
 {

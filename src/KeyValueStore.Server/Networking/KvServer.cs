@@ -1,7 +1,8 @@
 using System.Net;
 using System.Net.Sockets;
+using KeyValueStore.Server.PubSub;
 
-namespace KeyValueStore.Server;
+namespace KeyValueStore.Server.Networking;
 
 /// <summary>
 /// TCP server that accepts client connections and spawns a
@@ -10,12 +11,14 @@ namespace KeyValueStore.Server;
 public class KvServer
 {
     private readonly CommandDispatcher _dispatcher;
+    private readonly PubSubHub _hub;
     private readonly IPAddress _host;
     private readonly int _port;
 
-    public KvServer(CommandDispatcher dispatcher, string host, int port)
+    public KvServer(CommandDispatcher dispatcher, PubSubHub hub, string host, int port)
     {
         _dispatcher = dispatcher;
+        _hub = hub;
         _host = IPAddress.Parse(host);
         _port = port;
     }
@@ -32,7 +35,7 @@ public class KvServer
             while (!ct.IsCancellationRequested)
             {
                 var client = await listener.AcceptTcpClientAsync(ct);
-                var session = new ClientSession(client, _dispatcher);
+                var session = new ClientSession(client, _dispatcher, _hub);
                 _ = session.RunAsync(ct); // fire-and-forget
             }
         }

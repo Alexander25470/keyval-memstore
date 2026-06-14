@@ -16,6 +16,9 @@ Opciones:
 
 ```bash
 dotnet run --project src/KeyValueStore.Server -- --host 0.0.0.0 --port 6379
+
+# O por variables de entorno
+KV_HOST=0.0.0.0 KV_PORT=6379 dotnet run --project src/KeyValueStore.Server
 ```
 
 ## Probar con redis-cli
@@ -73,6 +76,27 @@ redis-cli -p 6379 HLEN user:1               # 2
 redis-cli -p 6379 HDEL user:1 email         # 1
 ```
 
+### Pub/Sub
+
+```bash
+# Terminal 1 — Suscriptor
+redis-cli -p 6379 SUBSCRIBE orders        # → subscribe, orders, :1
+                                          # (espera mensajes)
+
+# Terminal 2 — Publicador
+redis-cli -p 6379 PUBLISH orders new!     # → :1 (entregado a 1 suscriptor)
+
+# Terminal 1 recibe automáticamente:
+# → "message", "orders", "new!"
+
+# Por patrón glob
+redis-cli -p 6379 PSUBSCRIBE orders.*     # recibe orders.created, orders.updated
+
+# Cancelar suscripción
+redis-cli UNSUBSCRIBE orders
+redis-cli PUNSUBSCRIBE orders.*
+```
+
 ## Probar sin redis-cli (telnet / netcat)
 
 ```bash
@@ -84,5 +108,5 @@ echo -e "SET foo bar\r\nGET foo\r\n" | nc 127.0.0.1 6379  # +OK, $3, bar
 
 ```bash
 dotnet test
-# 143 tests, 0 fallados
+# 162 tests, 0 fallados
 ```

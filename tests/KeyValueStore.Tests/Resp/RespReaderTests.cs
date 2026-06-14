@@ -1,5 +1,7 @@
 using System.Text;
 using KeyValueStore.Server;
+using KeyValueStore.Server.Exceptions;
+using KeyValueStore.Server.Resp;
 
 namespace KeyValueStore.Tests;
 

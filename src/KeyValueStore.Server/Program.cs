@@ -1,4 +1,7 @@
 ﻿using KeyValueStore.Server;
+using KeyValueStore.Server.Networking;
+using KeyValueStore.Server.Store;
+using KeyValueStore.Server.PubSub;
 
 var host = Environment.GetEnvironmentVariable("KV_HOST") ?? "127.0.0.1";
 var port = int.TryParse(Environment.GetEnvironmentVariable("KV_PORT"), out var envPort) ? envPort : 6379;
@@ -17,8 +20,9 @@ Console.CancelKeyPress += (_, e) =>
 };
 
 var store = new InMemoryStore();
-var dispatcher = new CommandDispatcher(store);
-var server = new KvServer(dispatcher, host, port);
+var pubSub = new PubSubHub();
+var dispatcher = new CommandDispatcher(store, pubSub);
+var server = new KvServer(dispatcher, pubSub, host, port);
 
 _ = store.RunExpirationLoop(cts.Token);
 
