@@ -203,6 +203,6 @@ KvServer (1 Task)
 
 ## 7. Mejoras a futuro
 
-| Moporte multi-instancia | Replicación maestro-réplica, failover automático con Sentinel, y publicación en `__Booksleeve_MasterChanged`. Necesario para que SE.Redis opere en modo alta disponibilidad.
-| Suscripción sin sesión previa | SE.Redis envía `SUBSCRIBE` en conexiones frescas sin `ClientSession`. Crear sesión automáticamente al recibir `SUBSCRIBE`/`PSUBSCRIBE` sin sesión activa. |
-| Soporte multi-instancia | Replicación y alta disponibilidad con múltiples nodos |
+| Mejora | Descripción |
+|---|---|
+| Soporte multi-instancia | Replicación maestro-réplica, failover automático con Sentinel, y publicación en `__Booksleeve_MasterChanged`. Necesario para que SE.Redis opere en modo alta disponibilidad. |
