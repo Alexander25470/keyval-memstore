@@ -33,8 +33,8 @@ key-value-store/
 │   │   ├── RespReader.cs             # RESP2 → ReadOnlyMemory<byte>[]
 │   │   └── RespWriter.cs             # ReadOnlyMemory<byte> → RESP2
 │   └── Store/
-│       ├── ByteArrayComparer.cs      # IEqualityComparer<byte[]> (SIMD)
-│       ├── InMemoryStore.cs          # ConcurrentDictionary + TTL + operaciones
+    │   ├── ByteArrayComparer.cs      # IEqualityComparer<byte[]> (para HashSet/Dictionary internos)
+    │   ├── InMemoryStore.cs          # Hash table unsafe: byte* keys, Lock por bucket
 │       └── StoreEntry.cs             # Valor + tipo (string/set/hash) + TTL
 └── tests/KeyValueStore.Tests/
     ├── CommandDispatcherTests.cs     # 42 tests de ruteo
@@ -79,8 +79,8 @@ flowchart TB
             IB["Channel&lt;PubSubMessage&gt;<br/>por suscriptor"]
         end
 
-        subgraph Store["InMemoryStore"]
-            IMS["ConcurrentDictionary&lt;byte[], StoreEntry&gt;<br/>ByteArrayComparer<br/>TTL lazy + active"]
+        subgraph Store[&quot;InMemoryStore&quot;]
+            IMS[&quot;Unsafe hash table&lt;br/&gt;byte* keys (NativeMemory)&lt;br/&gt;Lock por bucket&lt;br/&gt;TTL lazy + active&quot;]
         end
 
         TL --> Sessions

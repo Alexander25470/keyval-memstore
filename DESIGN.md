@@ -96,13 +96,18 @@ RESP2 define seis tipos:
 
 También se soportan comandos inline (`PING\r\n`) para compatibilidad con telnet/netcat.
 
-### 3.2 `ConcurrentDictionary` en vez de `Dictionary` + `lock`
+### 3.2 Hash table unsafe con `byte*` en vez de `ConcurrentDictionary`
 
-Las lecturas son lock-free en el path común. Escrituras a buckets distintos no compiten. Sin riesgo de deadlocks ni de olvidar un lock. Toda la concurrencia está encapsulada dentro de `InMemoryStore` — quien lo usa nunca ve un lock.
+El store usa una hash table propia con chaining y locks por bucket. Las claves se almacenan como `byte*` alocado con `NativeMemory.Alloc` — esto elimina el `ToArray()` que `ConcurrentDictionary` forzaba en cada lookup. Las lecturas (`GET`, `EXISTS`, `DEL`) son 0 allocs. Las escrituras (`SET`) alocan un `Node` managed (1 alloc, equivalente al `byte[]` que ya se hacía antes para la key).
+
+- **Hash**: xxHash32 rolling sobre `ReadOnlySpan<byte>` — rápido, sin dependencias, determinístico.
+- **Lock**: `Lock` (.NET 9+) por bucket. Dos operaciones compiten solo si caen en el mismo bucket.
+- **Resize**: un solo thread crece la tabla (flag `_resizing` + `SpinWait`). Los demás esperan.
+- **TTL**: lazy en cada acceso + active sampling en background (idéntico a Redis).
 
 ### 3.3 `async`/`await` con IOCP en vez de event loop single-threaded
 
-Por debajo, .NET usa IOCP/epoll — cero hilos bloqueados en I/O. A diferencia del modelo single-threaded donde un comando lento (`KEYS *` con 100k keys) bloquea a todos los clientes, acá cada sesión corre en su propio `Task`. `ConcurrentDictionary` permite lecturas y escrituras concurrentes a nivel de bucket, por lo que otros clientes pueden seguir operando mientras uno está iterando.
+Por debajo, .NET usa IOCP/epoll — cero hilos bloqueados en I/O. A diferencia del modelo single-threaded donde un comando lento (`KEYS *` con 100k keys) bloquea a todos los clientes, acá cada sesión corre en su propio `Task`. La hash table con locks por bucket permite lecturas y escrituras concurrentes sin bloqueo global, por lo que otros clientes pueden seguir operando mientras uno está iterando.
 
 ### 3.4 TTL con doble expiración (lazy + active sampling)
 
@@ -117,7 +122,7 @@ Cada request TCP genera objetos temporales que el garbage collector debe limpiar
 
 - **`RespReader`**: el buffer donde se leen los bytes del socket se pide prestado a un pool (`ArrayPool<byte>.Shared`) y se devuelve al cerrar la conexión. Se evita asignar un buffer nuevo por cada request. Se eligió `ArrayPool` en vez de `ArrayBufferWriter` porque: (a) el buffer crece bajo demanda cuando un bulk string no entra en 4KB, y (b) al devolverlo al pool con `Return`, múltiples sesiones reúsan arrays del mismo tamaño sin pasar por el GC — si 100 conexiones piden 10MB, rotan el mismo array.
 - **`RespWriter`**: en vez de construir la respuesta con `StringBuilder`, convertirla a `string` y luego a `byte[]`, se escribe directo a bytes usando `ArrayBufferWriter<byte>`. Esto evita dos asignaciones por respuesta. Se usa `ArrayBufferWriter` en vez de `ArrayPool` porque las respuestas del servidor son chicas y de tamaños variados (no hay patrón de reúso), y `Reset()` permite liberar el array si creció desmedidamente tras una respuesta grande (`KEYS *` con muchas keys).
-- **Pipeline de datos en `byte[]`**: los comandos se leen como `ReadOnlyMemory<byte>[]` apuntando directamente al buffer interno del `RespReader` (zero-copy). Tanto keys como valores se almacenan como `byte[]` en el store, sin conversiones de encoding — binary-safe de punta a punta, idéntico a Redis real. Sets y hashes usan `ByteArrayComparer` para igualdad estructural de bytes, y el `ConcurrentDictionary` de keys usa el mismo comparer.
+- **Pipeline de datos en `byte[]`**: los comandos se leen como `ReadOnlyMemory<byte>[]` apuntando directamente al buffer interno del `RespReader` (zero-copy). Tanto keys como valores se almacenan en el store sin conversiones de encoding — binary-safe de punta a punta. Las claves en el store viven como `byte*` nativo (`NativeMemory`), eliminando el alloc por lookup. Sets y hashes usan `ByteArrayComparer` internamente.
 - **`StoreEntry` como `struct`**: cada entry vive inline en el slot del `ConcurrentDictionary`, sin objeto heap separado. Con 100k keys, son 100k objetos menos que el GC no tiene que barrer.
 - **`TcpClient.NoDelay = true`**: desactiva el algoritmo de Nagle. Respuestas chicas (`+OK\r\n`, `:1\r\n`) se envían inmediatamente sin esperar a acumular más datos. Crítico en RESP2 donde cada respuesta es un paquete independiente.
 
