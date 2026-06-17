@@ -619,6 +619,36 @@ public sealed class InMemoryStore : IDisposable
         return h;
     }
 
-    private static byte[] ToBytes(long v) => Encoding.ASCII.GetBytes(v.ToString());
-    private static bool TryParseLong(byte[] b, out long v) => long.TryParse(Encoding.ASCII.GetString(b), out v);
+    private static byte[] ToBytes(long v)
+    {
+        if (v == 0) return [48];
+        long tmp = v;
+        int digits = 0;
+        while (tmp != 0) { tmp /= 10; digits++; }
+        bool neg = v < 0;
+        int len = neg ? digits + 1 : digits;
+        var buf = new byte[len];
+        int i = len;
+        if (neg) { v = -v; buf[0] = 45; }
+        do { buf[--i] = (byte)(48 + v % 10); v /= 10; } while (v != 0);
+        return buf;
+    }
+
+    private static bool TryParseLong(byte[] bytes, out long value)
+    {
+        var span = new ReadOnlySpan<byte>(bytes);
+        if (span.IsEmpty) { value = 0; return false; }
+        bool neg = span[0] == 45;
+        int i = neg ? 1 : 0;
+        if (i >= span.Length) { value = 0; return false; }
+        long v = 0;
+        while (i < span.Length)
+        {
+            byte b = span[i++];
+            if (b < 48 || b > 57) { value = 0; return false; }
+            v = v * 10 + (b - 48);
+        }
+        value = neg ? -v : v;
+        return true;
+    }
 }
